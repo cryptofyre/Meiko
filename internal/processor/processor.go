@@ -237,10 +237,42 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 	talkgroupAlias := ""
 	if fromValue != "" {
 		talkgroupID = fromValue
-		// Use talkgroup service for enhanced formatting
+		// Use talkgroup service for enhanced formatting with context awareness
 		if cp.talkgroups != nil {
-			talkgroupInfo := cp.talkgroups.GetTalkgroupInfo(fromValue)
-			deptInfo := cp.talkgroups.GetDepartmentInfo(fromValue)
+			// Use context-aware classification - if FROM is unknown but TO is known,
+			// infer FROM's department based on TO's department
+			var talkgroupInfo *talkgroups.TalkgroupInfo
+			var deptInfo *talkgroups.DepartmentType
+
+			if toValue != "" && toValue != fromValue {
+				// We have both FROM and TO - use context-aware classification
+				talkgroupInfo = cp.talkgroups.GetTalkgroupInfoWithContext(fromValue, toValue)
+				deptInfo = cp.talkgroups.GetDepartmentInfoWithContext(fromValue, toValue)
+
+				// Check if this is a cross-department call (e.g., police → fire)
+				fromInfoDirect := cp.talkgroups.GetTalkgroupInfo(fromValue)
+				toInfoDirect := cp.talkgroups.GetTalkgroupInfo(toValue)
+
+				// If FROM has a known department type and it differs from TO's department type,
+				// keep the original classification to preserve cross-department calls like police → fire
+				if fromInfoDirect.ServiceType != talkgroups.ServiceOther &&
+					toInfoDirect.ServiceType != talkgroups.ServiceOther &&
+					fromInfoDirect.ServiceType != toInfoDirect.ServiceType {
+					talkgroupInfo = fromInfoDirect
+					deptInfo = cp.talkgroups.GetDepartmentInfo(fromValue)
+
+					cp.logger.Debug("Cross-department call detected, preserving original classification",
+						"from_tg", fromValue,
+						"from_dept", string(fromInfoDirect.ServiceType),
+						"to_tg", toValue,
+						"to_dept", string(toInfoDirect.ServiceType))
+				}
+			} else {
+				// No context available, use standard classification
+				talkgroupInfo = cp.talkgroups.GetTalkgroupInfo(fromValue)
+				deptInfo = cp.talkgroups.GetDepartmentInfo(fromValue)
+			}
+
 			talkgroupAlias = cp.talkgroups.FormatTalkgroupDisplay(fromValue)
 
 			// Use classified department name instead of raw group

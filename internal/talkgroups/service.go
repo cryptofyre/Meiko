@@ -305,16 +305,52 @@ func (s *Service) GetTalkgroupInfo(talkgroupID string) *TalkgroupInfo {
 	}
 }
 
-// FormatTalkgroupDisplay creates a formatted display string for talkgroups
-func (s *Service) FormatTalkgroupDisplay(talkgroupID string) string {
-	info := s.GetTalkgroupInfo(talkgroupID)
-
-	// Create formatted display with emoji and department
-	if info.ServiceType != ServiceOther {
-		return fmt.Sprintf("%s %s", info.Emoji, info.Name)
+// GetTalkgroupInfoWithContext returns enhanced talkgroup information with intelligent classification
+// based on call context (who is calling whom). If the caller is unknown but the called party
+// is a known department, it will assume the caller is from the same department type.
+func (s *Service) GetTalkgroupInfoWithContext(talkgroupID, contextTalkgroupID string) *TalkgroupInfo {
+	// If we have direct information about this talkgroup, use it
+	if info, exists := s.talkgroups[talkgroupID]; exists {
+		return info
 	}
 
-	return fmt.Sprintf("TG %s", talkgroupID)
+	// If we don't have context, fall back to default behavior
+	if contextTalkgroupID == "" || contextTalkgroupID == talkgroupID {
+		return s.GetTalkgroupInfo(talkgroupID)
+	}
+
+	// Get information about the context talkgroup (the one being called)
+	contextInfo := s.GetTalkgroupInfo(contextTalkgroupID)
+
+	// If the context talkgroup is also unknown, can't infer anything
+	if contextInfo.ServiceType == ServiceOther {
+		return s.GetTalkgroupInfo(talkgroupID)
+	}
+
+	// Get department information for the context talkgroup
+	contextDept, exists := s.departmentTypes[contextInfo.ServiceType]
+	if !exists {
+		return s.GetTalkgroupInfo(talkgroupID)
+	}
+
+	// Create enhanced info by inheriting from the context department
+	enhancedInfo := &TalkgroupInfo{
+		ID:          talkgroupID,
+		Name:        fmt.Sprintf("TG %s", talkgroupID), // Keep the TG format for unknown talkgroups
+		Group:       contextInfo.Group,                 // Inherit the department group
+		Color:       contextInfo.Color,                 // Inherit color
+		ServiceType: contextInfo.ServiceType,           // Inherit service type
+		Emoji:       contextDept.Emoji,                 // Use department emoji
+		ColorHex:    contextDept.Color,                 // Use department color
+	}
+
+	s.logger.Debug("Talkgroup classified via context",
+		"talkgroup_id", talkgroupID,
+		"context_talkgroup_id", contextTalkgroupID,
+		"inferred_service_type", string(enhancedInfo.ServiceType),
+		"inferred_group", enhancedInfo.Group)
+
+	return enhancedInfo
 }
 
 // GetDepartmentInfo returns department classification information
@@ -331,6 +367,46 @@ func (s *Service) GetDepartmentInfo(talkgroupID string) *DepartmentType {
 		Emoji:    "🔔",
 		Type:     ServiceOther,
 	}
+}
+
+// GetDepartmentInfoWithContext returns department classification information with context awareness
+func (s *Service) GetDepartmentInfoWithContext(talkgroupID, contextTalkgroupID string) *DepartmentType {
+	info := s.GetTalkgroupInfoWithContext(talkgroupID, contextTalkgroupID)
+	if dept, exists := s.departmentTypes[info.ServiceType]; exists {
+		return dept
+	}
+
+	// Return default for unknown departments
+	return &DepartmentType{
+		Keywords: []string{},
+		Color:    "#0099ff",
+		Emoji:    "🔔",
+		Type:     ServiceOther,
+	}
+}
+
+// FormatTalkgroupDisplay creates a formatted display string for talkgroups
+func (s *Service) FormatTalkgroupDisplay(talkgroupID string) string {
+	info := s.GetTalkgroupInfo(talkgroupID)
+
+	// Create formatted display with emoji and department
+	if info.ServiceType != ServiceOther {
+		return fmt.Sprintf("%s %s", info.Emoji, info.Name)
+	}
+
+	return fmt.Sprintf("TG %s", talkgroupID)
+}
+
+// FormatTalkgroupDisplayWithContext creates a formatted display string for talkgroups with context awareness
+func (s *Service) FormatTalkgroupDisplayWithContext(talkgroupID, contextTalkgroupID string) string {
+	info := s.GetTalkgroupInfoWithContext(talkgroupID, contextTalkgroupID)
+
+	// Create formatted display with emoji and department
+	if info.ServiceType != ServiceOther {
+		return fmt.Sprintf("%s %s", info.Emoji, info.Name)
+	}
+
+	return fmt.Sprintf("TG %s", talkgroupID)
 }
 
 // GetAllTalkgroups returns all loaded talkgroups
