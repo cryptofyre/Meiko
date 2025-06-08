@@ -125,9 +125,10 @@ type MonitoringThresholdConfig struct {
 
 // FileMonitorConfig contains file monitoring settings
 type FileMonitorConfig struct {
-	PollInterval int      `yaml:"poll_interval"`
-	Patterns     []string `yaml:"patterns"`
-	MinFileAge   int      `yaml:"min_file_age"`
+	PollInterval    int      `yaml:"poll_interval"`
+	Patterns        []string `yaml:"patterns"`
+	MinFileAge      int      `yaml:"min_file_age"`
+	MinCallDuration int      `yaml:"min_call_duration"`
 }
 
 // TalkgroupConfig contains talkgroup-related settings
@@ -300,6 +301,9 @@ func (c *Config) setDefaults() {
 	if c.FileMonitor.MinFileAge == 0 {
 		c.FileMonitor.MinFileAge = 2
 	}
+	if c.FileMonitor.MinCallDuration == 0 {
+		c.FileMonitor.MinCallDuration = 3
+	}
 
 	// Preflight defaults
 	if c.Preflight.MinDiskSpaceGB == 0 {
@@ -385,4 +389,9 @@ func (c *Config) GetCheckInterval() time.Duration {
 // GetDiscordUpdateInterval returns the Discord update interval as a time.Duration
 func (c *Config) GetDiscordUpdateInterval() time.Duration {
 	return time.Duration(c.Discord.Monitoring.UpdateInterval) * time.Millisecond
+}
+
+// GetMinCallDuration returns the minimum call duration as a time.Duration
+func (c *Config) GetMinCallDuration() time.Duration {
+	return time.Duration(c.FileMonitor.MinCallDuration) * time.Second
 }

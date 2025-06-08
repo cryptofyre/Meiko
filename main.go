@@ -141,7 +141,7 @@ func (app *Application) initialize() error {
 
 	// Initialize web server
 	if app.config.Web.Enabled {
-		app.webServer, err = web.New(app.config, app.db, app.monitor, app.talkgroups)
+		app.webServer, err = web.New(app.config, app.db, app.monitor, app.talkgroups, app.logger)
 		if err != nil {
 			return fmt.Errorf("failed to initialize web server: %w", err)
 		}

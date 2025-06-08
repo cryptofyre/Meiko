@@ -558,18 +558,28 @@
             transform: translate(-50%, -50%);
             background: var(--bg-card);
             border: 1px solid var(--border-primary);
-            max-width: 600px;
+            max-width: 700px;
             width: 90%;
-            max-height: 80%;
+            max-height: 85%;
             overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
         }
 
         .modal-header {
-            padding: 16px 20px;
+            padding: 20px 24px;
             border-bottom: 1px solid var(--border-secondary);
             display: flex;
             align-items: center;
             justify-content: space-between;
+            background: var(--bg-secondary);
+        }
+
+        .modal-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .modal-close {
@@ -578,31 +588,240 @@
             color: var(--text-secondary);
             cursor: pointer;
             font-size: 18px;
+            transition: color 0.2s ease;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
         }
 
         .modal-body {
-            padding: 20px;
+            padding: 24px;
         }
 
         .audio-player {
             width: 100%;
             margin: 16px 0;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            padding: 12px;
+            position: relative;
         }
 
+        .audio-player audio {
+            width: 100%;
+            background: transparent;
+        }
+
+        .audio-player audio::-webkit-media-controls-panel {
+            background-color: var(--bg-tertiary);
+        }
+
+        .audio-player audio::-webkit-media-controls-play-button,
+        .audio-player audio::-webkit-media-controls-pause-button {
+            background-color: var(--accent-blue);
+        }
+
+        .custom-audio-player {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .play-button {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-blue);
+            border: none;
+            border-radius: 50%;
+            color: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .play-button:hover {
+            background: var(--accent-green);
+            transform: scale(1.05);
+        }
+
+        .play-button:disabled {
+            background: var(--text-muted);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .audio-progress {
+            flex: 1;
+            height: 6px;
+            background: var(--border-secondary);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .audio-progress-fill {
+            height: 100%;
+            background: var(--accent-blue);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .audio-time {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+            min-width: 60px;
+        }
+
+        .audio-volume {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .volume-slider {
+            width: 60px;
+            height: 4px;
+            background: var(--border-secondary);
+            border-radius: 2px;
+            appearance: none;
+            cursor: pointer;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            cursor: pointer;
+        }
+
+        /* Enhanced Call Details */
         .call-details {
             display: grid;
             grid-template-columns: auto 1fr;
-            gap: 8px 16px;
+            gap: 12px 20px;
             font-family: var(--font-mono);
             font-size: 13px;
+            margin-bottom: 20px;
         }
 
         .call-details dt {
             color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 11px;
         }
 
         .call-details dd {
             color: var(--text-primary);
+            margin: 0;
+        }
+
+        .call-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .call-meta-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-secondary);
+            padding: 12px;
+        }
+
+        .call-meta-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .call-meta-value {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .call-transcription-section {
+            margin-top: 20px;
+        }
+
+        .transcription-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .transcription-content {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            padding: 16px;
+            border-left: 4px solid var(--accent-blue);
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+
+        /* Timeline Enhancements */
+        .timeline-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            color: var(--text-secondary);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-small:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .btn-small.play-btn {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .btn-small.play-btn:hover {
+            background: var(--accent-green);
         }
     </style>
 </head>
@@ -980,7 +1199,7 @@
                 .catch(error => {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <img src="/static/Meiko.png" alt="Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
+                            <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
                             <p>Meiko encountered an error!</p>
                             <small style="color: var(--text-muted);">Failed to load timeline events</small>
                         </div>
@@ -994,7 +1213,7 @@
             if (!events || events.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <img src="/static/Meiko.png" alt="Meiko" style="width: 64px; height: 64px; opacity: 0.5; margin-bottom: 16px;">
+                        <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.5; margin-bottom: 16px;">
                         <p>Meiko is waiting for activity...</p>
                         <small style="color: var(--text-muted);">No events found for this date</small>
                     </div>
@@ -1010,7 +1229,7 @@
             const timeString = timestamp.toLocaleTimeString('en-US', { 
                 hour: '2-digit', 
                 minute: '2-digit',
-                hour12: false
+                hour12: true
             });
 
             // Build tags
@@ -1031,14 +1250,14 @@
             let controlsHTML = '';
             if (event.type === 'call' && event.data && event.data.call_id) {
                 controlsHTML = `
-                    <div class="timeline-controls">
-                        <button class="btn-small" onclick="playCallAudio(${event.data.call_id})">
-                            <i class="fas fa-play"></i> PLAY
-                        </button>
-                        <button class="btn-small" onclick="showCallDetails(${event.data.call_id})">
-                            <i class="fas fa-info"></i> DETAILS
-                        </button>
-                    </div>
+                                         <div class="timeline-controls">
+                         <button class="btn-small play-btn" onclick="playCallAudio(${event.data.call_id})">
+                             <i class="fas fa-play"></i> PLAY
+                         </button>
+                         <button class="btn-small" onclick="showCallDetails(${event.data.call_id})">
+                             <i class="fas fa-info-circle"></i> DETAILS
+                         </button>
+                     </div>
                 `;
             }
 
@@ -1096,7 +1315,7 @@
                     displayCalls(data.calls);
                 })
                 .catch(error => {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);"><img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.3; vertical-align: middle; margin-right: 8px;">Meiko couldn\'t load call records</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);"><img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 32px; height: 32px; opacity: 0.3; vertical-align: middle; margin-right: 8px;">Meiko couldn\'t load call records</td></tr>';
                 });
         }
 
@@ -1104,7 +1323,7 @@
             const tbody = document.getElementById('calls-tbody');
             
             if (!calls || calls.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);"><img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.5; vertical-align: middle; margin-right: 8px;">Meiko hasn\'t detected any calls yet</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);"><img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 32px; height: 32px; opacity: 0.5; vertical-align: middle; margin-right: 8px;">Meiko hasn\'t detected any calls yet</td></tr>';
                 return;
             }
 
@@ -1143,10 +1362,11 @@
                     document.getElementById('calls-today-stat').textContent = stats.calls_today || '0';
                     document.getElementById('active-talkgroups-stat').textContent = Object.keys(stats.talkgroups || {}).length;
                     
-                    // Format uptime
-                    const uptime = stats.uptime || 0;
-                    const hours = Math.floor(uptime / 3600);
-                    const minutes = Math.floor((uptime % 3600) / 60);
+                    // Format uptime (convert from nanoseconds to seconds)
+                    const uptimeNanos = stats.uptime || 0;
+                    const uptimeSeconds = Math.floor(uptimeNanos / 1000000000);
+                    const hours = Math.floor(uptimeSeconds / 3600);
+                    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
                     document.getElementById('system-uptime-stat').textContent = `${hours}h ${minutes}m`;
                 })
                 .catch(error => {
@@ -1166,8 +1386,8 @@
                 .catch(error => {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <img src="/static/Meiko.png" alt="Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
-                            <p>Meiko couldn't generate a summary</p>
+                                                            <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
+                                <p>Meiko couldn't generate a summary</p>
                             <small style="color: var(--text-muted);">Analysis failed</small>
                         </div>
                     `;
@@ -1190,7 +1410,7 @@
             } else {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <img src="/static/Meiko.png" alt="Meiko" style="width: 64px; height: 64px; opacity: 0.5; margin-bottom: 16px;">
+                        <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.5; margin-bottom: 16px;">
                         <p>Meiko has nothing to summarize yet</p>
                         <small style="color: var(--text-muted);">No activity to analyze</small>
                     </div>
@@ -1216,11 +1436,11 @@
                             </div>
                         `).join('');
                     } else {
-                        container.innerHTML = '<div class="empty-state"><img src="/static/Meiko.png" alt="Meiko" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 12px;"><p>Meiko found no department data</p></div>';
+                        container.innerHTML = '<div class="empty-state"><img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 12px;"><p>Meiko found no department data</p></div>';
                     }
                 })
                 .catch(error => {
-                    container.innerHTML = '<div class="empty-state"><img src="/static/Meiko.png" alt="Meiko" style="width: 48px; height: 48px; opacity: 0.3; margin-bottom: 12px;"><p>Meiko couldn\'t load department stats</p></div>';
+                    container.innerHTML = '<div class="empty-state"><img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 48px; height: 48px; opacity: 0.3; margin-bottom: 12px;"><p>Meiko couldn\'t load department stats</p></div>';
                 });
         }
 
@@ -1256,22 +1476,32 @@
 
             fetch('/api/logs')
                 .then(response => response.json())
-                .then(logs => {
-                    if (logs && logs.length > 0) {
-                        container.innerHTML = logs.map(log => `
-                            <div style="margin-bottom: 8px; font-family: var(--font-mono);">
-                                <span style="color: var(--text-muted);">[${log.timestamp}]</span>
-                                <span style="color: var(--accent-blue);">[${log.level}]</span>
-                                <span>${log.message}</span>
-                            </div>
-                        `).join('');
+                .then(data => {
+                    if (data.logs && data.logs.length > 0) {
+                        container.innerHTML = data.logs.map(log => {
+                            const timestamp = new Date(log.timestamp).toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: true
+                            });
+                            const levelColor = getLevelColor(log.level);
+                            return `
+                                <div style="margin-bottom: 8px; font-family: var(--font-mono); font-size: 12px;">
+                                    <span style="color: var(--text-muted);">[${timestamp}]</span>
+                                    <span style="color: ${levelColor}; font-weight: 500;">[${log.level}]</span>
+                                    <span style="color: var(--text-secondary);">[${log.component}]</span>
+                                    <span style="color: var(--text-primary);">${log.message}</span>
+                                </div>
+                            `;
+                        }).join('');
                         container.scrollTop = container.scrollHeight;
                     } else {
-                        container.innerHTML = '<div class="empty-state"><img src="/static/Meiko.png" alt="Meiko" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 12px;"><p>Meiko found no logs to display</p></div>';
+                        container.innerHTML = '<div class="empty-state"><img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 12px;"><p>Meiko found no logs to display</p></div>';
                     }
                 })
                 .catch(error => {
-                    container.innerHTML = '<div class="empty-state"><img src="/static/Meiko.png" alt="Meiko" style="width: 48px; height: 48px; opacity: 0.3; margin-bottom: 12px;"><p>Meiko couldn\'t access system logs</p></div>';
+                    container.innerHTML = '<div class="empty-state"><img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 48px; height: 48px; opacity: 0.3; margin-bottom: 12px;"><p>Meiko couldn\'t access system logs</p></div>';
                 });
         }
 
@@ -1298,41 +1528,191 @@
                 })
                 .catch(error => {
                     console.error('Failed to load call details:', error);
+                    const container = document.getElementById('call-details-content');
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
+                            <p>Meiko couldn't load call details</p>
+                            <small style="color: var(--text-muted);">Failed to fetch call information</small>
+                        </div>
+                    `;
+                    document.getElementById('call-modal').style.display = 'block';
                 });
         }
 
         function displayCallDetails(call) {
             const container = document.getElementById('call-details-content');
-            const timestamp = new Date(call.timestamp).toLocaleString();
+            const timestamp = new Date(call.timestamp);
+            const formattedTime = timestamp.toLocaleString('en-US', {
+                weekday: 'long',
+                year: 'numeric', 
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+            
+            const duration = formatDuration(call.duration);
             
             container.innerHTML = `
-                <dt>Call ID</dt>
-                <dd>${call.id}</dd>
-                <dt>Timestamp</dt>
-                <dd>${timestamp}</dd>
-                <dt>Department</dt>
-                <dd>${call.talkgroup_group || 'Unknown'}</dd>
-                <dt>Talkgroup</dt>
-                <dd>${call.talkgroup_alias || call.talkgroup_id}</dd>
-                <dt>Duration</dt>
-                <dd>${call.duration}s</dd>
-                <dt>Frequency</dt>
-                <dd>${call.frequency || 'Unknown'}</dd>
-                <dt>Filename</dt>
-                <dd>${call.filename}</dd>
-                ${call.transcription ? `
-                    <dt>Transcription</dt>
-                    <dd style="grid-column: 1 / -1; margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary);">
-                        ${call.transcription}
-                    </dd>
-                ` : ''}
-                <div style="grid-column: 1 / -1; margin-top: 16px;">
-                    <audio class="audio-player" controls>
+                <div class="call-meta-grid">
+                    <div class="call-meta-item">
+                        <div class="call-meta-label">Call ID</div>
+                        <div class="call-meta-value">#${call.id}</div>
+                    </div>
+                    <div class="call-meta-item">
+                        <div class="call-meta-label">Duration</div>
+                        <div class="call-meta-value">${duration}</div>
+                    </div>
+                    <div class="call-meta-item">
+                        <div class="call-meta-label">Frequency</div>
+                        <div class="call-meta-value">${call.frequency || 'Unknown'}</div>
+                    </div>
+                    <div class="call-meta-item">
+                        <div class="call-meta-label">System</div>
+                        <div class="call-meta-value">${call.talkgroup_group || 'Unknown'}</div>
+                    </div>
+                </div>
+
+                <div class="call-details">
+                    <dt>Timestamp</dt>
+                    <dd>${formattedTime}</dd>
+                    <dt>Talkgroup</dt>
+                    <dd>${call.talkgroup_alias || call.talkgroup_id}</dd>
+                    <dt>Filename</dt>
+                    <dd>${call.filename}</dd>
+                </div>
+
+                <div class="custom-audio-player">
+                    <div class="audio-controls">
+                        <button class="play-button" id="play-btn-${call.id}">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <div class="audio-progress" id="progress-${call.id}">
+                            <div class="audio-progress-fill" id="progress-fill-${call.id}"></div>
+                        </div>
+                        <div class="audio-time" id="time-${call.id}">0:00 / 0:00</div>
+                        <div class="audio-volume">
+                            <i class="fas fa-volume-up"></i>
+                            <input type="range" class="volume-slider" id="volume-${call.id}" min="0" max="100" value="100">
+                        </div>
+                    </div>
+                    <audio id="audio-${call.id}" preload="metadata">
                         <source src="/api/calls/${call.id}/audio" type="audio/mpeg">
-                        Your browser does not support the audio element.
                     </audio>
                 </div>
+
+                ${call.transcription ? `
+                    <div class="call-transcription-section">
+                        <div class="transcription-header">
+                            <i class="fas fa-quote-left"></i>
+                            Transcription
+                        </div>
+                        <div class="transcription-content">
+                            ${call.transcription}
+                        </div>
+                    </div>
+                ` : ''}
             `;
+
+            // Initialize custom audio player
+            initCustomAudioPlayer(call.id);
+        }
+
+        // Custom audio player functionality
+        function initCustomAudioPlayer(callId) {
+            const audio = document.getElementById(`audio-${callId}`);
+            const playBtn = document.getElementById(`play-btn-${callId}`);
+            const progress = document.getElementById(`progress-${callId}`);
+            const progressFill = document.getElementById(`progress-fill-${callId}`);
+            const timeDisplay = document.getElementById(`time-${callId}`);
+            const volumeSlider = document.getElementById(`volume-${callId}`);
+
+            let isPlaying = false;
+
+            // Play/pause functionality
+            playBtn.addEventListener('click', () => {
+                if (isPlaying) {
+                    audio.pause();
+                } else {
+                    audio.play();
+                }
+            });
+
+            // Update play button state
+            audio.addEventListener('play', () => {
+                isPlaying = true;
+                playBtn.innerHTML = '<i class="fas fa-pause"></i>';
+            });
+
+            audio.addEventListener('pause', () => {
+                isPlaying = false;
+                playBtn.innerHTML = '<i class="fas fa-play"></i>';
+            });
+
+            // Update progress and time
+            audio.addEventListener('timeupdate', () => {
+                if (audio.duration) {
+                    const progress = (audio.currentTime / audio.duration) * 100;
+                    progressFill.style.width = progress + '%';
+                    
+                    const currentTime = formatTime(audio.currentTime);
+                    const totalTime = formatTime(audio.duration);
+                    timeDisplay.textContent = `${currentTime} / ${totalTime}`;
+                }
+            });
+
+            // Progress bar click
+            progress.addEventListener('click', (e) => {
+                if (audio.duration) {
+                    const rect = progress.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const clickProgress = x / rect.width;
+                    audio.currentTime = clickProgress * audio.duration;
+                }
+            });
+
+            // Volume control
+            volumeSlider.addEventListener('input', (e) => {
+                audio.volume = e.target.value / 100;
+            });
+
+            // Load metadata
+            audio.addEventListener('loadedmetadata', () => {
+                const totalTime = formatTime(audio.duration);
+                timeDisplay.textContent = `0:00 / ${totalTime}`;
+            });
+        }
+
+        // Helper function to format time
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // Helper function to format duration
+        function formatDuration(seconds) {
+            if (seconds < 60) {
+                return `${seconds}s`;
+            }
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
+        }
+
+        // Helper function to get color for log level
+        function getLevelColor(level) {
+            switch (level.toUpperCase()) {
+                case 'ERROR': return '#ff6b6b';
+                case 'WARN': case 'WARNING': return '#ffa726';
+                case 'INFO': return '#42a5f5';
+                case 'DEBUG': return '#66bb6a';
+                case 'SUCCESS': return '#4caf50';
+                default: return 'var(--text-secondary)';
+            }
         }
 
         function closeCallModal() {

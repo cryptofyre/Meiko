@@ -2,10 +2,12 @@ package monitoring
 
 import (
 	"context"
+	"runtime"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 
 	"Meiko/internal/config"
@@ -15,9 +17,10 @@ import (
 
 // Monitor monitors system health and performance
 type Monitor struct {
-	config  config.MonitoringConfig
-	discord *discord.Client
-	logger  *logger.Logger
+	config    config.MonitoringConfig
+	discord   *discord.Client
+	logger    *logger.Logger
+	startTime time.Time
 }
 
 // SystemMonitor is an alias for backward compatibility
@@ -35,9 +38,10 @@ type SystemStats struct {
 // New creates a new system monitor
 func New(config config.MonitoringConfig, discord *discord.Client, logger *logger.Logger) *Monitor {
 	return &Monitor{
-		config:  config,
-		discord: discord,
-		logger:  logger,
+		config:    config,
+		discord:   discord,
+		logger:    logger,
+		startTime: time.Now(),
 	}
 }
 
@@ -107,8 +111,13 @@ func (m *Monitor) getSystemStats() (*SystemStats, error) {
 	}
 	stats.Disk = diskInfo.UsedPercent
 
-	// Temperature (placeholder - would need platform-specific implementation)
-	stats.Temperature = 0.0
+	// Temperature (try to get thermal data, fallback to 0.0)
+	if temps, err := host.SensorsTemperatures(); err == nil && len(temps) > 0 {
+		// Use the first available temperature sensor
+		stats.Temperature = temps[0].Temperature
+	} else {
+		stats.Temperature = 0.0
+	}
 
 	return stats, nil
 }
@@ -146,10 +155,22 @@ func (m *Monitor) GetCurrentStats() *SystemStats {
 
 // GetSystemInfo returns system information
 func (m *Monitor) GetSystemInfo() map[string]interface{} {
+	hostInfo, err := host.Info()
+	if err != nil {
+		m.logger.Error("Failed to get host info", "error", err)
+		return map[string]interface{}{
+			"os":           runtime.GOOS,
+			"architecture": runtime.GOARCH,
+			"hostname":     "Unknown",
+			"uptime":       time.Since(m.startTime).Seconds(),
+		}
+	}
+
 	return map[string]interface{}{
-		"os":           "Unknown",
-		"architecture": "Unknown",
-		"hostname":     "Unknown",
-		"uptime":       0,
+		"os":            hostInfo.OS,
+		"architecture":  hostInfo.KernelArch,
+		"hostname":      hostInfo.Hostname,
+		"uptime":        time.Since(m.startTime).Seconds(),
+		"system_uptime": hostInfo.Uptime,
 	}
 }

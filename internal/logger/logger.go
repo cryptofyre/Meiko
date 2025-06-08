@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"Meiko/internal/config"
@@ -20,12 +21,23 @@ const (
 	ERROR
 )
 
+// LogEntry represents a single log entry
+type LogEntry struct {
+	Timestamp time.Time `json:"timestamp"`
+	Level     string    `json:"level"`
+	Component string    `json:"component"`
+	Message   string    `json:"message"`
+}
+
 // Logger provides structured logging with colors and levels
 type Logger struct {
 	level      LogLevel
 	colors     bool
 	timestamps bool
 	fileLogger *log.Logger
+	buffer     []LogEntry
+	bufferMu   sync.RWMutex
+	maxBuffer  int
 }
 
 // Color constants for terminal output
@@ -51,6 +63,8 @@ func New(config config.LoggingConfig) *Logger {
 		level:      parseLogLevel(config.Level),
 		colors:     config.Colors,
 		timestamps: config.Timestamps,
+		buffer:     make([]LogEntry, 0),
+		maxBuffer:  100, // Keep last 100 log entries
 	}
 
 	// Setup file logging if enabled
@@ -117,6 +131,46 @@ func (l *Logger) Success(message string, args ...interface{}) {
 	}
 }
 
+// addToBuffer adds a log entry to the internal buffer
+func (l *Logger) addToBuffer(level LogLevel, component, message string) {
+	l.bufferMu.Lock()
+	defer l.bufferMu.Unlock()
+
+	entry := LogEntry{
+		Timestamp: time.Now(),
+		Level:     levelToString(level),
+		Component: component,
+		Message:   message,
+	}
+
+	l.buffer = append(l.buffer, entry)
+
+	// Keep only the last maxBuffer entries
+	if len(l.buffer) > l.maxBuffer {
+		l.buffer = l.buffer[len(l.buffer)-l.maxBuffer:]
+	}
+}
+
+// GetRecentLogs returns recent log entries
+func (l *Logger) GetRecentLogs(limit int) []LogEntry {
+	l.bufferMu.RLock()
+	defer l.bufferMu.RUnlock()
+
+	if limit <= 0 || limit > len(l.buffer) {
+		limit = len(l.buffer)
+	}
+
+	// Return the last 'limit' entries
+	start := len(l.buffer) - limit
+	if start < 0 {
+		start = 0
+	}
+
+	result := make([]LogEntry, limit)
+	copy(result, l.buffer[start:])
+	return result
+}
+
 // log formats and outputs a log message
 func (l *Logger) log(level LogLevel, component, message string, args ...interface{}) {
 	timestamp := ""
@@ -134,6 +188,9 @@ func (l *Logger) log(level LogLevel, component, message string, args ...interfac
 			}
 		}
 	}
+
+	// Add to buffer
+	l.addToBuffer(level, component, formattedMessage)
 
 	// Build the log entry
 	var logEntry string
@@ -179,6 +236,9 @@ func (l *Logger) logSuccess(component, message string, args ...interface{}) {
 			}
 		}
 	}
+
+	// Add to buffer as INFO level
+	l.addToBuffer(INFO, component, formattedMessage)
 
 	var logEntry string
 	var coloredEntry string

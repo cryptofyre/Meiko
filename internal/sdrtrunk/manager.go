@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -366,10 +367,22 @@ func (m *Manager) logStatus() {
 	}
 }
 
-// logWriter implements io.Writer to redirect process output to our logger
+// logWriter implements io.Writer to redirect process output to our logger with filtering
 type logWriter struct {
-	logger *logger.Logger
-	level  string
+	logger         *logger.Logger
+	level          string
+	startupSummary *startupSummary
+}
+
+// startupSummary tracks startup information to provide clean summaries
+type startupSummary struct {
+	version         string
+	buildInfo       string
+	hostInfo        string
+	memoryInfo      string
+	libraryInfo     []string
+	tunerInfo       string
+	startupComplete bool
 }
 
 func (lw *logWriter) Write(p []byte) (n int, err error) {
@@ -378,24 +391,270 @@ func (lw *logWriter) Write(p []byte) (n int, err error) {
 		return len(p), nil
 	}
 
-	// Add prefix to distinguish SDRTrunk output
-	prefixedMessage := "SDRTrunk: " + message
+	// Initialize startup summary if needed
+	if lw.startupSummary == nil {
+		lw.startupSummary = &startupSummary{
+			libraryInfo: make([]string, 0),
+		}
+	}
 
-	switch lw.level {
-	case "ERROR":
-		lw.logger.Error(prefixedMessage)
-	case "WARN":
-		lw.logger.Warn(prefixedMessage)
-	case "INFO":
-		lw.logger.Info(prefixedMessage)
-	case "DEBUG":
-		lw.logger.Debug("SDRTrunk", message)
-	default:
-		// Default to INFO for unknown levels
-		lw.logger.Info(prefixedMessage)
+	// Process and filter the message
+	if filtered := lw.filterMessage(message); filtered != "" {
+		lw.logMessage(filtered)
 	}
 
 	return len(p), nil
+}
+
+// filterMessage processes SDRTrunk messages and returns cleaned/summarized content
+func (lw *logWriter) filterMessage(message string) string {
+	// Remove timestamp and class name prefixes to get clean message
+	cleanMsg := lw.cleanMessage(message)
+
+	// Skip verbose/redundant messages
+	if lw.shouldSkipMessage(cleanMsg) {
+		return ""
+	}
+
+	// Check for startup information to summarize
+	if lw.captureStartupInfo(cleanMsg) {
+		return "" // Message captured for summary, don't log individually
+	}
+
+	// Check if startup is complete
+	if lw.detectStartupComplete(cleanMsg) {
+		summary := lw.generateStartupSummary()
+		lw.startupSummary.startupComplete = true
+		return summary
+	}
+
+	// Apply message formatting and cleaning
+	return lw.formatMessage(cleanMsg)
+}
+
+// cleanMessage removes SDRTrunk timestamp, class names and memory info
+func (lw *logWriter) cleanMessage(message string) string {
+	// Remove SDRTrunk timestamp (YYYY-MM-DD HH:MM:SS.mmm)
+	re := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} (INFO|WARN|ERROR|DEBUG)\s+`)
+	message = re.ReplaceAllString(message, "")
+
+	// Remove Java class names (e.g., i.g.d.log.ApplicationLog)
+	re = regexp.MustCompile(`[a-z]\.[a-z]\.d\.[a-zA-Z.]+\s+-\s+`)
+	message = re.ReplaceAllString(message, "")
+
+	// Remove memory usage info [XXmb/XXmb XX%]
+	re = regexp.MustCompile(`\s+\[\d+MB/\d+MB \d+%\]`)
+	message = re.ReplaceAllString(message, "")
+
+	// Clean up extra whitespace
+	return strings.TrimSpace(message)
+}
+
+// shouldSkipMessage determines if a message should be filtered out entirely
+func (lw *logWriter) shouldSkipMessage(message string) bool {
+	skipPatterns := []string{
+		"WARNING: Using incubator modules",
+		"Icons file not found",
+		"loading icons file",
+		"Application Log File:",
+		"Build Timestamp",
+		"Build-JDK",
+		"Build OS",
+		"*******************************************************************",
+		"**** sdrtrunk: a trunked radio",
+		"****  website: https://github.com",
+		"Memory Logging Format:",
+		"Storage Directories:",
+		"Application Root:",
+		"Application Log:",
+		"Event Log:",
+		"Playlist:",
+		"Recordings:",
+		"ThreadPool - Application thread pool created",
+		"SystemProperties - loaded",
+		"Species[float, 4, S_128_BIT]",
+		"no system audio devices available",
+		"No audio output devices available",
+	}
+
+	for _, pattern := range skipPatterns {
+		if strings.Contains(message, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// captureStartupInfo captures important startup information for summarization
+func (lw *logWriter) captureStartupInfo(message string) bool {
+	if lw.startupSummary.startupComplete {
+		return false
+	}
+
+	// Capture version information
+	if strings.Contains(message, "SDRTrunk Version") {
+		parts := strings.Split(message, ":")
+		if len(parts) >= 2 {
+			lw.startupSummary.version = strings.TrimSpace(parts[1])
+		}
+		return true
+	}
+
+	// Capture host information
+	if strings.Contains(message, "Host OS Name:") || strings.Contains(message, "Host OS Arch:") {
+		if lw.startupSummary.hostInfo == "" {
+			lw.startupSummary.hostInfo = message
+		} else {
+			lw.startupSummary.hostInfo += " " + message
+		}
+		return true
+	}
+
+	// Capture memory information
+	if strings.Contains(message, "Host Max Java Memory:") || strings.Contains(message, "Host CPU Cores:") {
+		if lw.startupSummary.memoryInfo == "" {
+			lw.startupSummary.memoryInfo = message
+		} else {
+			lw.startupSummary.memoryInfo += " " + message
+		}
+		return true
+	}
+
+	// Capture important library loading
+	if strings.Contains(message, "JMBE") && strings.Contains(message, "loaded") {
+		lw.startupSummary.libraryInfo = append(lw.startupSummary.libraryInfo, message)
+		return true
+	}
+
+	// Capture tuner information
+	if strings.Contains(message, "Discovered tuner") {
+		lw.startupSummary.tunerInfo = message
+		return true
+	}
+
+	return false
+}
+
+// detectStartupComplete checks if SDRTrunk startup is complete
+func (lw *logWriter) detectStartupComplete(message string) bool {
+	completePatterns := []string{
+		"starting main application headless",
+		"Auto-starting channel",
+		"Sample Rate",
+	}
+
+	for _, pattern := range completePatterns {
+		if strings.Contains(message, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// generateStartupSummary creates a clean startup summary
+func (lw *logWriter) generateStartupSummary() string {
+	var summary strings.Builder
+
+	summary.WriteString("🚀 SDRTrunk startup complete")
+
+	if lw.startupSummary.version != "" {
+		summary.WriteString(fmt.Sprintf(" (v%s)", lw.startupSummary.version))
+	}
+
+	details := []string{}
+
+	if lw.startupSummary.tunerInfo != "" {
+		// Extract just the tuner type
+		if strings.Contains(lw.startupSummary.tunerInfo, "HackRF") {
+			details = append(details, "HackRF detected")
+		} else if strings.Contains(lw.startupSummary.tunerInfo, "RTL") {
+			details = append(details, "RTL-SDR detected")
+		} else {
+			details = append(details, "SDR detected")
+		}
+	}
+
+	if len(lw.startupSummary.libraryInfo) > 0 {
+		details = append(details, "Audio codecs loaded")
+	}
+
+	if len(details) > 0 {
+		summary.WriteString(" - ")
+		summary.WriteString(strings.Join(details, ", "))
+	}
+
+	return summary.String()
+}
+
+// formatMessage applies final formatting to non-filtered messages
+func (lw *logWriter) formatMessage(message string) string {
+	// Important operational messages
+	if strings.Contains(message, "Loading playlist") {
+		return "📋 Loading talkgroup playlist"
+	}
+
+	if strings.Contains(message, "Diagnostic monitoring enabled") {
+		return "📊 System monitoring active"
+	}
+
+	if strings.Contains(message, "LibUsb API Version") {
+		return ""
+	}
+
+	if strings.Contains(message, "discovered") && strings.Contains(message, "potential usb devices") {
+		// Extract device count
+		re := regexp.MustCompile(`\[(\d+)\]`)
+		matches := re.FindStringSubmatch(message)
+		if len(matches) > 1 {
+			return fmt.Sprintf("🔍 Scanning USB devices (%s found)", matches[1])
+		}
+		return "🔍 Scanning USB devices"
+	}
+
+	// Channel/frequency information
+	if strings.Contains(message, "Sample Rate") && strings.Contains(message, "providing") {
+		re := regexp.MustCompile(`providing \[(\d+)\] channels`)
+		matches := re.FindStringSubmatch(message)
+		if len(matches) > 1 {
+			return fmt.Sprintf("📡 Initialized %s channels", matches[1])
+		}
+	}
+
+	// Error messages - keep as is but clean up
+	if strings.Contains(message, "ERROR") || strings.Contains(message, "Error") {
+		return "❌ " + message
+	}
+
+	// Warning messages
+	if strings.Contains(message, "WARN") || strings.Contains(message, "Warning") {
+		return "⚠️ " + message
+	}
+
+	// Library/API messages
+	if strings.Contains(message, "API library is not available") {
+		return "" // Skip these
+	}
+
+	// Default: return the cleaned message
+	return message
+}
+
+// logMessage outputs the final processed message
+func (lw *logWriter) logMessage(message string) {
+	switch lw.level {
+	case "ERROR":
+		lw.logger.Error(message)
+	case "WARN":
+		lw.logger.Warn(message)
+	case "INFO":
+		lw.logger.Info(message)
+	case "DEBUG":
+		lw.logger.Debug("SDRTrunk", message)
+	default:
+		lw.logger.Info(message)
+	}
 }
 
 // GetOutputDirectory returns the configured audio output directory

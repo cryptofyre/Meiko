@@ -7,12 +7,12 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/websocket/v2"
 	"github.com/google/generative-ai-go/genai"
@@ -20,6 +20,7 @@ import (
 
 	"Meiko/internal/config"
 	"Meiko/internal/database"
+	meikoLogger "Meiko/internal/logger"
 	"Meiko/internal/monitoring"
 	"Meiko/internal/talkgroups"
 )
@@ -39,6 +40,7 @@ type Server struct {
 	db              *database.Database
 	monitor         *monitoring.Monitor
 	talkgroups      *talkgroups.Service
+	logger          *meikoLogger.Logger
 	clients         map[*websocket.Conn]bool
 	broadcast       chan []byte
 	gemini          *genai.Client
@@ -102,12 +104,13 @@ type TimeRange struct {
 }
 
 // New creates a new web server instance
-func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor, talkgroups *talkgroups.Service) (*Server, error) {
+func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor, talkgroups *talkgroups.Service, logger *meikoLogger.Logger) (*Server, error) {
 	server := &Server{
 		config:     cfg,
 		db:         db,
 		monitor:    monitor,
 		talkgroups: talkgroups,
+		logger:     logger,
 		clients:    make(map[*websocket.Conn]bool),
 		broadcast:  make(chan []byte),
 	}
@@ -126,7 +129,6 @@ func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor,
 		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
 		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
 	}))
-	server.app.Use(logger.New())
 
 	// Initialize Gemini client if enabled
 	if cfg.Web.Gemini.Enabled && cfg.Web.Gemini.APIKey != "" {
@@ -525,6 +527,7 @@ func (s *Server) getCallsSummary(c *fiber.Ctx) error {
 // getStats returns current system statistics
 func (s *Server) getStats(c *fiber.Ctx) error {
 	stats := s.monitor.GetCurrentStats()
+	systemInfo := s.monitor.GetSystemInfo()
 
 	// Get call statistics
 	totalCalls, _ := s.db.GetTotalCallCount()
@@ -533,12 +536,18 @@ func (s *Server) getStats(c *fiber.Ctx) error {
 	frequencies, _ := s.db.GetFrequencyStats()
 	talkgroups, _ := s.db.GetTalkgroupStats()
 
+	// Convert uptime from seconds to duration
+	var uptime time.Duration
+	if uptimeSeconds, ok := systemInfo["uptime"].(float64); ok {
+		uptime = time.Duration(uptimeSeconds) * time.Second
+	}
+
 	systemStats := SystemStats{
 		CPU:         stats.CPU,
 		Memory:      stats.Memory,
 		Disk:        stats.Disk,
 		Temperature: stats.Temperature,
-		Uptime:      time.Since(time.Now().Add(-24 * time.Hour)), // Placeholder
+		Uptime:      uptime,
 		TotalCalls:  totalCalls,
 		LastCall:    lastCall,
 		CallsToday:  callsToday,
@@ -589,30 +598,30 @@ func (s *Server) getSystemInfo(c *fiber.Ctx) error {
 	return c.JSON(info)
 }
 
-// getLogs returns recent log entries (placeholder)
+// getLogs returns recent log entries
 func (s *Server) getLogs(c *fiber.Ctx) error {
-	limit := c.QueryInt("limit", 100)
+	limit := c.QueryInt("limit", 50)
 	level := c.Query("level", "")
 
-	// This would need to be implemented to read from log files
-	// For now, return placeholder data
-	logs := []map[string]interface{}{
-		{
-			"timestamp": time.Now(),
-			"level":     "INFO",
-			"message":   "System running normally",
-		},
-		{
-			"timestamp": time.Now().Add(-1 * time.Minute),
-			"level":     "DEBUG",
-			"message":   "Processing audio file: example.mp3",
-		},
+	// Get recent logs from logger buffer
+	logs := s.logger.GetRecentLogs(limit)
+
+	// Filter by level if specified
+	if level != "" {
+		filteredLogs := make([]meikoLogger.LogEntry, 0)
+		for _, log := range logs {
+			if strings.EqualFold(log.Level, level) {
+				filteredLogs = append(filteredLogs, log)
+			}
+		}
+		logs = filteredLogs
 	}
 
 	return c.JSON(fiber.Map{
 		"logs":  logs,
 		"limit": limit,
 		"level": level,
+		"total": len(logs),
 	})
 }
 

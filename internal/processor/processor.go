@@ -97,6 +97,16 @@ func (cp *CallProcessor) processFileEvent(ctx context.Context, event watcher.Fil
 	// Calculate audio duration
 	if duration, err := cp.getAudioDuration(event.Path); err == nil {
 		callRecord.Duration = int(duration.Seconds())
+
+		// Check minimum call duration filter
+		minDuration := cp.config.GetMinCallDuration()
+		if duration < minDuration {
+			cp.logger.Info("Skipping short call - below minimum duration threshold",
+				"file", filepath.Base(event.Path),
+				"duration", fmt.Sprintf("%.1fs", duration.Seconds()),
+				"minimum", fmt.Sprintf("%.1fs", minDuration.Seconds()))
+			return
+		}
 	} else {
 		cp.logger.Warn("Failed to calculate audio duration", "error", err, "file", filepath.Base(event.Path))
 		callRecord.Duration = 0
