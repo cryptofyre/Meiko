@@ -188,7 +188,8 @@ func (app *Application) start() error {
 
 	// Start web server
 	if app.webServer != nil {
-		app.logger.Info("Starting web server...")
+		app.logger.Info("Starting web server with pre-forking enabled...")
+		app.logger.Info("Pre-forking will spawn multiple worker processes for better performance")
 		// Connect web server to processor for real-time updates
 		app.processor.SetWebServer(app.webServer)
 		go func() {
@@ -197,6 +198,7 @@ func (app *Application) start() error {
 			}
 		}()
 		app.logger.Success("Web dashboard available at http://localhost:%d", app.webServer.GetPort())
+		app.logger.Info("Multiple worker processes are handling web requests")
 	}
 
 	app.logger.Success("🚀 Meiko is now running!")

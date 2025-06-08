@@ -146,6 +146,17 @@
             color: var(--accent-red);
         }
 
+        .status-indicator.connecting {
+            border-color: #ffa726;
+            color: #ffa726;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         .header-right {
             display: flex;
             align-items: center;
@@ -713,10 +724,14 @@
         .call-details {
             display: grid;
             grid-template-columns: auto 1fr;
-            gap: 12px 20px;
+            gap: 8px 20px;
             font-family: var(--font-mono);
             font-size: 13px;
             margin-bottom: 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-secondary);
+            padding: 16px;
+            border-radius: 4px;
         }
 
         .call-details dt {
@@ -725,16 +740,22 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-size: 11px;
+            align-self: start;
+            padding: 2px 0;
         }
 
         .call-details dd {
             color: var(--text-primary);
             margin: 0;
+            line-height: 1.4;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            padding: 2px 0;
         }
 
         .call-meta-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 16px;
             margin-bottom: 20px;
         }
@@ -742,7 +763,12 @@
         .call-meta-item {
             background: var(--bg-tertiary);
             border: 1px solid var(--border-secondary);
-            padding: 12px;
+            padding: 16px 12px;
+            border-radius: 4px;
+            min-height: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
 
         .call-meta-label {
@@ -750,7 +776,8 @@
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            line-height: 1.2;
         }
 
         .call-meta-value {
@@ -758,6 +785,9 @@
             font-size: 14px;
             color: var(--text-primary);
             font-weight: 500;
+            line-height: 1.3;
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         .call-transcription-section {
@@ -1070,6 +1100,7 @@
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             connectWebSocket();
+            startConnectivityMonitor(); // Start monitoring WebSocket connection
             loadSystemStats();
             loadTimeline();
             startMeikoPersonality();
@@ -1113,6 +1144,9 @@
         }
 
         // WebSocket connection
+        let wsReconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -1120,7 +1154,12 @@
             ws = new WebSocket(wsUrl);
             
             ws.onopen = function() {
+                console.log('WebSocket connected');
                 updateSystemStatus('online');
+                wsReconnectAttempts = 0; // Reset reconnect attempts on successful connection
+                
+                // Update Meiko status
+                updateMeikoStatus("System connected", "Real-time monitoring active");
             };
             
             ws.onmessage = function(event) {
@@ -1128,15 +1167,48 @@
                 handleWebSocketMessage(data);
             };
             
-            ws.onclose = function() {
+            ws.onclose = function(event) {
+                console.log('WebSocket disconnected', event.code, event.reason);
                 updateSystemStatus('offline');
-                // Reconnect after 5 seconds
-                setTimeout(connectWebSocket, 5000);
+                
+                // Update Meiko status
+                updateMeikoStatus("Connection lost", "Attempting to reconnect...");
+                
+                // Attempt to reconnect with exponential backoff
+                if (wsReconnectAttempts < maxReconnectAttempts) {
+                    wsReconnectAttempts++;
+                    const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempts), 30000); // Max 30 second delay
+                    console.log(`Attempting to reconnect in ${delay}ms (attempt ${wsReconnectAttempts}/${maxReconnectAttempts})`);
+                    setTimeout(connectWebSocket, delay);
+                } else {
+                    console.log('Max reconnection attempts reached');
+                    updateMeikoStatus("Connection failed", "Manual refresh required");
+                }
             };
             
-            ws.onerror = function() {
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
                 updateSystemStatus('offline');
+                
+                // Update Meiko status  
+                updateMeikoStatus("Connection error", "Network issues detected");
             };
+        }
+        
+        // Periodic connectivity check
+        function startConnectivityMonitor() {
+            setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    // Connection is healthy
+                    updateSystemStatus('online');
+                } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+                    // Currently connecting
+                    updateSystemStatus('connecting');
+                } else {
+                    // Connection is closed or failed
+                    updateSystemStatus('offline');
+                }
+            }, 5000); // Check every 5 seconds
         }
 
         // Tab switching
@@ -1180,6 +1252,9 @@
             if (status === 'online') {
                 statusEl.className = 'status-indicator online';
                 circle.className = 'fas fa-circle';
+            } else if (status === 'connecting') {
+                statusEl.className = 'status-indicator connecting';
+                circle.className = 'fas fa-spinner fa-spin';
             } else {
                 statusEl.className = 'status-indicator offline';
                 circle.className = 'fas fa-times';
@@ -1766,11 +1841,66 @@
             document.getElementById('call-modal').style.display = 'none';
         }
 
+        // Global audio player for timeline
+        let currentTimelineAudio = null;
+        let currentTimelineButton = null;
+
         function playCallAudio(callId) {
-            // Simple audio play - could be enhanced with a custom player
-            const audio = new Audio(`/api/calls/${callId}/audio`);
-            audio.play().catch(error => {
+            const button = event.target.closest('.play-btn');
+            const playIcon = button.querySelector('i');
+            
+            // If another audio is playing, stop it first
+            if (currentTimelineAudio && !currentTimelineAudio.paused) {
+                currentTimelineAudio.pause();
+                if (currentTimelineButton) {
+                    const oldIcon = currentTimelineButton.querySelector('i');
+                    oldIcon.className = 'fas fa-play';
+                    currentTimelineButton.innerHTML = '<i class="fas fa-play"></i> PLAY';
+                }
+            }
+            
+            // If clicking the same button that's already set up
+            if (currentTimelineAudio && currentTimelineAudio.src.includes(`/api/calls/${callId}/audio`)) {
+                if (currentTimelineAudio.paused) {
+                    currentTimelineAudio.play().then(() => {
+                        playIcon.className = 'fas fa-pause';
+                        button.innerHTML = '<i class="fas fa-pause"></i> PAUSE';
+                    }).catch(error => {
+                        console.error('Failed to play audio:', error);
+                    });
+                } else {
+                    currentTimelineAudio.pause();
+                    playIcon.className = 'fas fa-play';
+                    button.innerHTML = '<i class="fas fa-play"></i> PLAY';
+                }
+                return;
+            }
+            
+            // Create new audio instance
+            currentTimelineAudio = new Audio(`/api/calls/${callId}/audio`);
+            currentTimelineButton = button;
+            
+            // Set up event listeners
+            currentTimelineAudio.addEventListener('ended', () => {
+                playIcon.className = 'fas fa-play';
+                button.innerHTML = '<i class="fas fa-play"></i> PLAY';
+            });
+            
+            currentTimelineAudio.addEventListener('pause', () => {
+                playIcon.className = 'fas fa-play';
+                button.innerHTML = '<i class="fas fa-play"></i> PLAY';
+            });
+            
+            currentTimelineAudio.addEventListener('play', () => {
+                playIcon.className = 'fas fa-pause';
+                button.innerHTML = '<i class="fas fa-pause"></i> PAUSE';
+            });
+            
+            // Play the audio
+            currentTimelineAudio.play().catch(error => {
                 console.error('Failed to play audio:', error);
+                playIcon.className = 'fas fa-play';
+                button.innerHTML = '<i class="fas fa-play"></i> PLAY';
             });
         }
 

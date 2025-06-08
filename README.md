@@ -22,6 +22,23 @@
 - **Error Recovery**: Robust error handling and recovery mechanisms
 - **Performance Monitoring**: CPU, memory, and disk usage tracking
 
+## 🚀 Performance Features
+
+### Pre-forking Web Server
+Meiko uses Fiber's pre-forking feature to spawn multiple worker processes that handle web requests independently. This significantly improves performance and request handling capacity on multi-core systems.
+
+**Benefits:**
+- Better CPU utilization across multiple cores
+- Improved request throughput and response times
+- Enhanced stability under high load
+- Automatic load balancing between worker processes
+
+**How it works:**
+- When starting the web server, Fiber automatically creates multiple child processes
+- Each process handles incoming HTTP requests independently
+- The OS kernel automatically distributes connections between processes
+- No additional configuration required - it works automatically
+
 ## Installation
 
 ### Prerequisites

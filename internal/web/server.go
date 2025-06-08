@@ -117,9 +117,18 @@ func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor,
 
 	// Initialize Fiber app
 	server.app = fiber.New(fiber.Config{
-		AppName:      "Meiko Web Dashboard",
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		AppName:                   "Meiko Web Dashboard",
+		ReadTimeout:               30 * time.Second,
+		WriteTimeout:              30 * time.Second,
+		Prefork:                   true,        // Enable pre-forking for better performance
+		CaseSensitive:             false,       // URLs are case-insensitive
+		StrictRouting:             false,       // Trailing slashes are ignored
+		DisableKeepalive:          false,       // Keep connections alive for better performance
+		DisableDefaultDate:        false,       // Include Date header
+		DisableDefaultContentType: false,       // Include Content-Type header
+		DisableHeaderNormalizing:  false,       // Normalize headers
+		ServerHeader:              "Meiko",     // Custom server header
+		CompressedFileSuffix:      ".meiko.gz", // Custom compressed file suffix
 	})
 
 	// Add middleware
