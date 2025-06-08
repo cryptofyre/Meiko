@@ -54,7 +54,6 @@ function displayCalls(calls) {
 // Analytics functions
 function loadAnalytics() {
     updateStatCards();
-    loadSummary();
     loadDepartmentStats();
 }
 
@@ -78,53 +77,12 @@ function updateStatCards() {
         });
 }
 
-function loadSummary() {
-    const container = document.getElementById('summary-content');
-    container.innerHTML = '<div class="loading"><img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.7; margin-right: 12px;">Meiko is analyzing communications...</div>';
-
-    fetch('/api/calls/summary/today')
-        .then(response => response.json())
-        .then(data => {
-            displaySummary(data);
-        })
-        .catch(error => {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
-                    <p>Meiko couldn't generate a summary</p>
-                    <small style="color: var(--text-muted);">Analysis failed</small>
-                </div>
-            `;
-        });
-}
-
-function displaySummary(data) {
-    const container = document.getElementById('summary-content');
-    
-    if (data.summary) {
-        const generatedAt = new Date(data.generated_at).toLocaleString('en-US', {
-            month: 'short', 
-            day: 'numeric',
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: true
-        });
-        container.innerHTML = `
-            <div style="margin-bottom: 12px; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">
-                Generated: ${generatedAt} | Calls: ${data.call_count} | Range: ${data.time_range}
-            </div>
-            <div style="line-height: 1.6;">
-                ${data.summary.replace(/\n/g, '<br>')}
-            </div>
-        `;
-    } else {
-        container.innerHTML = `
-            <div class="empty-state">
-                <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.5; margin-bottom: 16px;">
-                <p>Meiko has nothing to summarize yet</p>
-                <small style="color: var(--text-muted);">No activity to analyze</small>
-            </div>
-        `;
+// Summary functionality moved to timeline - keeping for backwards compatibility
+function refreshSummary() {
+    // Redirect to timeline summaries
+    console.log('Summary refresh redirected to timeline');
+    if (typeof refreshTimelineSummaries === 'function') {
+        refreshTimelineSummaries();
     }
 }
 

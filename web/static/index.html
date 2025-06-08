@@ -82,6 +82,13 @@
                     <i class="fas fa-refresh"></i>
                     REFRESH
                 </button>
+                <button class="btn" onclick="refreshTimelineSummaries()" title="Refresh AI Summaries">
+                    <i class="fas fa-robot"></i>
+                    AI SUMMARIES
+                </button>
+                <button class="btn-small" onclick="toggleAllSummaries()" title="Toggle all summaries">
+                    <i class="fas fa-eye"></i>
+                </button>
             </div>
 
             <div class="card">
@@ -264,16 +271,21 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-title">
-                        <i class="fas fa-robot"></i>
-                        AI Activity Summary
+                        <i class="fas fa-info-circle"></i>
+                        AI Summaries
                     </div>
-                    <button class="btn-small" onclick="refreshSummary()">
-                        <i class="fas fa-refresh"></i>
-                        REFRESH
-                    </button>
                 </div>
-                <div class="card-content" id="summary-content">
-                    <div class="loading">Generating AI summary...</div>
+                <div class="card-content">
+                    <div class="info-message">
+                        <img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.7; margin-right: 12px; vertical-align: middle;">
+                        <span>AI summaries are now integrated into the Timeline tab for better organization and readability.</span>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <button class="btn" onclick="switchTab('timeline')">
+                            <i class="fas fa-stream"></i>
+                            GO TO TIMELINE
+                        </button>
+                    </div>
                 </div>
             </div>
 

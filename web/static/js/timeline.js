@@ -1,5 +1,7 @@
 // Timeline functions
 let isLoadingTimeline = false;
+let timelineSummaries = {};
+let showSummaries = true;
 
 function loadTimeline(silent = false) {
     // Prevent multiple simultaneous loads
@@ -14,33 +16,46 @@ function loadTimeline(silent = false) {
         container.innerHTML = '<div class="loading"><img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.7; margin-right: 12px;">Meiko is scanning for events...</div>';
     }
 
-    fetch(`/api/timeline?date=${currentDate}`)
+    // Load both timeline events and summaries
+    Promise.all([
+        fetch(`/api/timeline?date=${currentDate}`).then(r => r.json()),
+        loadTimelineSummaries(currentDate)
+    ])
+    .then(([timelineData, summariesData]) => {
+        timelineSummaries = summariesData.summaries || {};
+        displayEnhancedTimeline(timelineData.events);
+        console.log(`Timeline loaded: ${timelineData.events?.length || 0} events, ${Object.keys(timelineSummaries).length} summaries`);
+    })
+    .catch(error => {
+        console.error('Timeline load error:', error);
+        container.innerHTML = `
+            <div class="empty-state">
+                <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
+                <p>Meiko encountered an error!</p>
+                <small style="color: var(--text-muted);">Failed to load timeline events: ${error.message}</small>
+            </div>
+        `;
+    })
+    .finally(() => {
+        isLoadingTimeline = false;
+    });
+}
+
+function loadTimelineSummaries(date) {
+    return fetch(`/api/timeline/summaries/${date}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             return response.json();
         })
-        .then(data => {
-            displayTimeline(data.events);
-            console.log(`Timeline loaded: ${data.events?.length || 0} events`);
-        })
         .catch(error => {
-            console.error('Timeline load error:', error);
-            container.innerHTML = `
-                <div class="empty-state">
-                    <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
-                    <p>Meiko encountered an error!</p>
-                    <small style="color: var(--text-muted);">Failed to load timeline events: ${error.message}</small>
-                </div>
-            `;
-        })
-        .finally(() => {
-            isLoadingTimeline = false;
+            console.warn('Failed to load timeline summaries:', error);
+            return { summaries: {} };
         });
 }
 
-function displayTimeline(events) {
+function displayEnhancedTimeline(events) {
     const container = document.getElementById('timeline-container');
     
     if (!events || events.length === 0) {
@@ -67,14 +82,15 @@ function displayTimeline(events) {
         wasPlaying = !currentTimelineAudio.paused;
         audioCurrentTime = currentTimelineAudio.currentTime;
         
-        // Extract call ID from the audio src
         const srcMatch = currentTimelineAudio.src.match(/\/api\/calls\/(\d+)\/audio/);
         if (srcMatch) {
             currentCallId = parseInt(srcMatch[1]);
         }
     }
     
-    container.innerHTML = events.map(event => createTimelineItem(event)).join('');
+    // Organize events by hour and create enhanced timeline
+    const organizedTimeline = organizeTimelineByHour(events);
+    container.innerHTML = createEnhancedTimelineHTML(organizedTimeline);
     
     // Restore audio state if it was playing
     if (wasPlaying && currentCallId) {
@@ -102,6 +118,118 @@ function displayTimeline(events) {
             }, 300);
         }, 300);
     }
+}
+
+function organizeTimelineByHour(events) {
+    const hourlyGroups = {};
+    
+    // Group events by hour
+    events.forEach(event => {
+        const eventTime = new Date(event.timestamp);
+        const hour = eventTime.getHours();
+        
+        if (!hourlyGroups[hour]) {
+            hourlyGroups[hour] = {
+                hour: hour,
+                events: [],
+                summary: timelineSummaries[hour] || null
+            };
+        }
+        
+        hourlyGroups[hour].events.push(event);
+    });
+    
+    // Sort by hour
+    return Object.values(hourlyGroups).sort((a, b) => b.hour - a.hour);
+}
+
+function createEnhancedTimelineHTML(organizedTimeline) {
+    if (!organizedTimeline.length) {
+        return '<div class="empty-state"><p>No events to display</p></div>';
+    }
+    
+    return organizedTimeline.map(hourGroup => {
+        return createHourlyTimelineBlock(hourGroup);
+    }).join('');
+}
+
+function createHourlyTimelineBlock(hourGroup) {
+    const hour = hourGroup.hour;
+    const events = hourGroup.events;
+    const summary = hourGroup.summary;
+    
+    const hourLabel = formatHourLabel(hour);
+    const categoryTags = summary?.categories ? createCategoryTags(summary.categories) : '';
+    
+    let html = `<div class="timeline-hour-block" data-hour="${hour}">`;
+    
+    // Hour header with summary
+    html += `<div class="timeline-hour-header">`;
+    html += `<div class="timeline-hour-info">`;
+    html += `<div class="timeline-hour-label">${hourLabel}</div>`;
+    html += `<div class="timeline-hour-meta">${events.length} event${events.length !== 1 ? 's' : ''}${categoryTags}</div>`;
+    html += `</div>`;
+    
+    if (summary && showSummaries) {
+        html += `<div class="timeline-hour-actions">`;
+        html += `<button class="btn-small summary-toggle" onclick="toggleHourSummary(${hour})" title="Toggle AI Summary">`;
+        html += `<i class="fas fa-robot"></i>`;
+        html += `</button>`;
+        html += `</div>`;
+    }
+    
+    html += `</div>`;
+    
+    // AI Summary section (initially hidden on mobile)
+    if (summary && showSummaries) {
+        html += `<div class="timeline-hour-summary" id="summary-${hour}">`;
+        html += `<div class="summary-content">`;
+        html += `<div class="summary-header">`;
+        html += `<i class="fas fa-robot"></i>`;
+        html += `<span class="summary-title">AI Analysis</span>`;
+        html += `<span class="summary-meta">${summary.call_count} calls analyzed</span>`;
+        html += `</div>`;
+        html += `<div class="summary-text">${summary.summary}</div>`;
+        html += `</div>`;
+        html += `</div>`;
+    }
+    
+    // Events for this hour
+    html += `<div class="timeline-hour-events">`;
+    html += events.map(event => createTimelineItem(event)).join('');
+    html += `</div>`;
+    
+    html += `</div>`;
+    
+    return html;
+}
+
+function formatHourLabel(hour) {
+    const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    const ampm = hour < 12 ? 'AM' : 'PM';
+    return `${hour12}:00 ${ampm}`;
+}
+
+function createCategoryTags(categories) {
+    if (!categories || categories.length === 0) return '';
+    
+    const categoryColors = {
+        'POLICE': 'var(--police-color)',
+        'FIRE': 'var(--fire-color)',
+        'EMS': 'var(--ems-color)',
+        'MEDICAL': 'var(--ems-color)',
+        'EMERGENCY': 'var(--emergency-color)',
+        'TRAFFIC': 'var(--accent-yellow)',
+        'PUBLIC_WORKS': 'var(--public-works-color)',
+        'OTHER': 'var(--text-muted)'
+    };
+    
+    const tags = categories.slice(0, 3).map(category => {
+        const color = categoryColors[category] || categoryColors['OTHER'];
+        return `<span class="category-tag" style="color: ${color}; border-color: ${color}">${category}</span>`;
+    }).join('');
+    
+    return ` ${tags}`;
 }
 
 function createTimelineItem(event) {
@@ -157,6 +285,62 @@ function createTimelineItem(event) {
             </div>
         </div>
     `;
+}
+
+function toggleHourSummary(hour) {
+    const summaryElement = document.getElementById(`summary-${hour}`);
+    const toggleButton = document.querySelector(`[onclick="toggleHourSummary(${hour})"]`);
+    
+    if (summaryElement) {
+        const isVisible = summaryElement.classList.contains('visible');
+        
+        if (isVisible) {
+            summaryElement.classList.remove('visible');
+            toggleButton.innerHTML = '<i class="fas fa-robot"></i>';
+            toggleButton.setAttribute('title', 'Show AI Summary');
+        } else {
+            summaryElement.classList.add('visible');
+            toggleButton.innerHTML = '<i class="fas fa-robot" style="color: var(--accent-blue);"></i>';
+            toggleButton.setAttribute('title', 'Hide AI Summary');
+        }
+    }
+}
+
+function toggleAllSummaries() {
+    showSummaries = !showSummaries;
+    loadTimeline(); // Reload to apply the change
+}
+
+function refreshTimelineSummaries() {
+    const container = document.getElementById('timeline-container');
+    const currentHtml = container.innerHTML;
+    
+    loadTimelineSummaries(currentDate)
+        .then(data => {
+            timelineSummaries = data.summaries || {};
+            console.log('Timeline summaries refreshed:', Object.keys(timelineSummaries).length);
+            
+            // Update existing summary sections
+            Object.keys(timelineSummaries).forEach(hour => {
+                const summaryElement = document.getElementById(`summary-${hour}`);
+                if (summaryElement) {
+                    const summary = timelineSummaries[hour];
+                    summaryElement.innerHTML = `
+                        <div class="summary-content">
+                            <div class="summary-header">
+                                <i class="fas fa-robot"></i>
+                                <span class="summary-title">AI Analysis</span>
+                                <span class="summary-meta">${summary.call_count} calls analyzed</span>
+                            </div>
+                            <div class="summary-text">${summary.summary}</div>
+                        </div>
+                    `;
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Failed to refresh summaries:', error);
+        });
 }
 
 // Date controls

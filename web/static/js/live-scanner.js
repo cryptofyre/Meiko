@@ -1164,6 +1164,13 @@ function setupKeyboardShortcuts() {
 
 // Show keyboard shortcuts help
 function showKeyboardShortcuts() {
+    // Check if modal already exists
+    let modal = document.getElementById('shortcuts-modal');
+    if (modal) {
+        modal.style.display = 'block';
+        return;
+    }
+    
     const shortcuts = [
         { key: 'SPACEBAR', action: 'Play/Pause Audio or Toggle Scanner' },
         { key: '→', action: 'Skip Current Call' },
@@ -1181,5 +1188,125 @@ function showKeyboardShortcuts() {
         </div>`
     ).join('');
     
-    updateMeikoStatus("Keyboard Shortcuts", shortcutsHtml);
+    // Create modal
+    modal = document.createElement('div');
+    modal.id = 'shortcuts-modal';
+    modal.className = 'modal';
+    modal.style.cssText = `
+        display: block;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        animation: fadeIn 0.15s ease-out;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: var(--bg-primary);
+            margin: 10% auto;
+            padding: 0;
+            border: 1px solid var(--border-primary);
+            border-radius: 4px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.2s ease-out;
+        ">
+            <div class="modal-header" style="
+                padding: 16px 20px;
+                border-bottom: 1px solid var(--border-secondary);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            ">
+                <h3 style="
+                    margin: 0;
+                    color: var(--text-primary);
+                    font-size: 16px;
+                    font-weight: 600;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                ">
+                    <i class="fas fa-keyboard" style="color: var(--accent-blue);"></i>
+                    Keyboard Shortcuts
+                </h3>
+                <button class="modal-close" onclick="closeShortcutsModal()" style="
+                    background: none;
+                    border: none;
+                    color: var(--text-secondary);
+                    font-size: 18px;
+                    cursor: pointer;
+                    padding: 4px;
+                    border-radius: 2px;
+                    line-height: 1;
+                ">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="
+                padding: 20px;
+                max-height: 400px;
+                overflow-y: auto;
+            ">
+                <div class="shortcuts-list" style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                ">
+                    ${shortcutsHtml}
+                </div>
+                <div style="
+                    margin-top: 16px;
+                    padding-top: 16px;
+                    border-top: 1px solid var(--border-secondary);
+                    font-size: 12px;
+                    color: var(--text-muted);
+                    text-align: center;
+                ">
+                    These shortcuts only work when the Live Scanner tab is active
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add event listeners
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeShortcutsModal();
+        }
+    });
+    
+    // Add ESC key listener
+    const escListener = (e) => {
+        if (e.key === 'Escape') {
+            closeShortcutsModal();
+            document.removeEventListener('keydown', escListener);
+        }
+    };
+    document.addEventListener('keydown', escListener);
+    
+    // Add to page
+    document.body.appendChild(modal);
+    
+    updateMeikoStatus("Keyboard shortcuts", "Showing available hotkeys");
+}
+
+// Close shortcuts modal
+function closeShortcutsModal() {
+    const modal = document.getElementById('shortcuts-modal');
+    if (modal) {
+        modal.style.animation = 'fadeOut 0.15s ease-out';
+        setTimeout(() => {
+            if (modal.parentNode) {
+                document.body.removeChild(modal);
+            }
+        }, 150);
+        
+        updateMeikoStatus("Ready for monitoring", "Live scanner controls available");
+    }
 } 

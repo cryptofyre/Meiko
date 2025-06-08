@@ -209,6 +209,11 @@ func (s *Server) setupRoutes() {
 	// AI Summary endpoints (requires Gemini)
 	api.Post("/summary/generate", s.generateSummary)
 
+	// Timeline-specific summary endpoints
+	api.Get("/timeline/summaries/:date", s.getTimelineSummaries)
+	api.Get("/timeline/summary/:date/:hour", s.getHourlySummary)
+	api.Post("/timeline/summary/generate", s.generateTimelineSummary)
+
 	// WebSocket endpoint
 	s.app.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
@@ -1001,24 +1006,8 @@ func (s *Server) parseTimeRange(rangeStr string) (TimeRange, error) {
 
 // buildSummaryPrompt builds a prompt for Gemini based on call data
 func (s *Server) buildSummaryPrompt(calls []*database.CallRecord, customPrompt string) string {
-	prompt := "Please analyze the following radio communication data and provide a summary:\n\n"
-
-	if customPrompt != "" {
-		prompt += customPrompt + "\n\n"
-	}
-
-	prompt += "Call Records:\n"
-	for _, call := range calls {
-		prompt += fmt.Sprintf("- %s: %s (Talkgroup: %s, Duration: %ds)\n",
-			call.Timestamp.Format("15:04:05"),
-			call.Transcription,
-			call.TalkgroupAlias,
-			call.Duration)
-	}
-
-	prompt += "\nPlease provide insights about patterns, significant events, and overall activity levels."
-
-	return prompt
+	// Use the enhanced timeline summary prompt for better results
+	return s.buildTimelineSummaryPrompt(calls, customPrompt)
 }
 
 // Start starts the web server
@@ -1237,4 +1226,332 @@ func (s *Server) debugBroadcastLatest(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "Most recent call broadcasted successfully",
 	})
+}
+
+// getTimelineSummaries returns AI summaries for timeline integration
+func (s *Server) getTimelineSummaries(c *fiber.Ctx) error {
+	dateStr := c.Params("date")
+	if dateStr == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Date parameter required"})
+	}
+
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid date format"})
+	}
+
+	// Get summaries for each hour of the day
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	summaries := make(map[int]fiber.Map)
+
+	for hour := 0; hour < 24; hour++ {
+		hourStart := startOfDay.Add(time.Duration(hour) * time.Hour)
+		hourEnd := hourStart.Add(time.Hour)
+
+		calls, err := s.db.GetCallRecords(&hourStart, &hourEnd, "", 50, 0)
+		if err != nil || len(calls) == 0 {
+			continue
+		}
+
+		// Generate summary for this hour if we have enough activity
+		if len(calls) >= 3 { // Only generate summaries for hours with significant activity
+			summary := s.generateHourSummary(calls, hour)
+			if summary != "" {
+				summaries[hour] = fiber.Map{
+					"hour":         hour,
+					"summary":      summary,
+					"call_count":   len(calls),
+					"time_range":   fmt.Sprintf("%02d:00-%02d:59", hour, hour),
+					"generated_at": time.Now(),
+					"categories":   s.categorizeHourActivity(calls),
+				}
+			}
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"date":         dateStr,
+		"summaries":    summaries,
+		"generated_at": time.Now(),
+	})
+}
+
+// getHourlySummary returns a specific hour's summary
+func (s *Server) getHourlySummary(c *fiber.Ctx) error {
+	dateStr := c.Params("date")
+	hourStr := c.Params("hour")
+
+	if dateStr == "" || hourStr == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Date and hour parameters required"})
+	}
+
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid date format"})
+	}
+
+	hour, err := strconv.Atoi(hourStr)
+	if err != nil || hour < 0 || hour > 23 {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid hour (0-23)"})
+	}
+
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	hourStart := startOfDay.Add(time.Duration(hour) * time.Hour)
+	hourEnd := hourStart.Add(time.Hour)
+
+	calls, err := s.db.GetCallRecords(&hourStart, &hourEnd, "", 100, 0)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch calls"})
+	}
+
+	if len(calls) == 0 {
+		return c.JSON(fiber.Map{
+			"hour":       hour,
+			"summary":    "No activity during this hour",
+			"call_count": 0,
+			"time_range": fmt.Sprintf("%02d:00-%02d:59", hour, hour),
+			"categories": []string{},
+		})
+	}
+
+	summary := s.generateHourSummary(calls, hour)
+	categories := s.categorizeHourActivity(calls)
+
+	return c.JSON(fiber.Map{
+		"hour":         hour,
+		"summary":      summary,
+		"call_count":   len(calls),
+		"time_range":   fmt.Sprintf("%02d:00-%02d:59", hour, hour),
+		"generated_at": time.Now(),
+		"categories":   categories,
+		"calls":        s.buildCallSummaries(calls),
+	})
+}
+
+// generateTimelineSummary generates a custom summary for timeline
+func (s *Server) generateTimelineSummary(c *fiber.Ctx) error {
+	var req struct {
+		StartTime string `json:"start_time"`
+		EndTime   string `json:"end_time"`
+		Prompt    string `json:"prompt,omitempty"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	startTime, err := time.Parse(time.RFC3339, req.StartTime)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid start_time format"})
+	}
+
+	endTime, err := time.Parse(time.RFC3339, req.EndTime)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid end_time format"})
+	}
+
+	calls, err := s.db.GetCallRecords(&startTime, &endTime, "", 100, 0)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch calls"})
+	}
+
+	if len(calls) == 0 {
+		return c.JSON(fiber.Map{
+			"summary":    "No radio activity detected during this time period",
+			"call_count": 0,
+			"time_range": fmt.Sprintf("%s to %s", startTime.Format("15:04"), endTime.Format("15:04")),
+			"categories": []string{},
+		})
+	}
+
+	prompt := req.Prompt
+	if prompt == "" {
+		prompt = "Provide a detailed timeline summary of radio communication activity, highlighting significant events and patterns"
+	}
+
+	summary := s.generateCustomSummary(calls, prompt)
+	categories := s.categorizeHourActivity(calls)
+
+	return c.JSON(fiber.Map{
+		"summary":      summary,
+		"call_count":   len(calls),
+		"time_range":   fmt.Sprintf("%s to %s", startTime.Format("15:04"), endTime.Format("15:04")),
+		"generated_at": time.Now(),
+		"categories":   categories,
+	})
+}
+
+// generateHourSummary generates a summary for a specific hour
+func (s *Server) generateHourSummary(calls []*database.CallRecord, hour int) string {
+	if s.gemini == nil || len(calls) == 0 {
+		return ""
+	}
+
+	prompt := s.buildTimelineSummaryPrompt(calls, fmt.Sprintf("Analyze radio communications for hour %02d:00-%02d:59", hour, hour))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	model := s.gemini.GenerativeModel(s.config.Web.Gemini.Model)
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		log.Printf("Failed to generate hour summary: %v", err)
+		return ""
+	}
+
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
+}
+
+// generateCustomSummary generates a custom summary with specific prompt
+func (s *Server) generateCustomSummary(calls []*database.CallRecord, customPrompt string) string {
+	if s.gemini == nil || len(calls) == 0 {
+		return ""
+	}
+
+	prompt := s.buildTimelineSummaryPrompt(calls, customPrompt)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	model := s.gemini.GenerativeModel(s.config.Web.Gemini.Model)
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		log.Printf("Failed to generate custom summary: %v", err)
+		return ""
+	}
+
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
+}
+
+// categorizeHourActivity categorizes the types of activity in an hour
+func (s *Server) categorizeHourActivity(calls []*database.CallRecord) []string {
+	categories := make(map[string]bool)
+
+	for _, call := range calls {
+		// Categorize by talkgroup
+		if call.TalkgroupGroup != "" {
+			switch strings.ToUpper(call.TalkgroupGroup) {
+			case "POLICE", "LAW ENFORCEMENT":
+				categories["POLICE"] = true
+			case "FIRE", "FIRE DEPARTMENT":
+				categories["FIRE"] = true
+			case "EMS", "MEDICAL", "AMBULANCE":
+				categories["EMS"] = true
+			case "PUBLIC WORKS", "UTILITIES":
+				categories["PUBLIC_WORKS"] = true
+			case "EMERGENCY":
+				categories["EMERGENCY"] = true
+			default:
+				categories["OTHER"] = true
+			}
+		}
+
+		// Categorize by transcription content
+		if call.Transcription != "" {
+			text := strings.ToUpper(call.Transcription)
+			if strings.Contains(text, "EMERGENCY") || strings.Contains(text, "CODE") {
+				categories["EMERGENCY"] = true
+			}
+			if strings.Contains(text, "TRAFFIC") || strings.Contains(text, "ACCIDENT") {
+				categories["TRAFFIC"] = true
+			}
+			if strings.Contains(text, "MEDICAL") || strings.Contains(text, "AMBULANCE") {
+				categories["MEDICAL"] = true
+			}
+		}
+	}
+
+	result := make([]string, 0, len(categories))
+	for category := range categories {
+		result = append(result, category)
+	}
+
+	return result
+}
+
+// buildCallSummaries creates brief summaries of individual calls
+func (s *Server) buildCallSummaries(calls []*database.CallRecord) []fiber.Map {
+	summaries := make([]fiber.Map, 0, len(calls))
+
+	for _, call := range calls {
+		summary := fiber.Map{
+			"id":        call.ID,
+			"timestamp": call.Timestamp,
+			"duration":  call.Duration,
+			"talkgroup": call.TalkgroupAlias,
+			"frequency": call.Frequency,
+		}
+
+		// Add brief transcription
+		if call.Transcription != "" {
+			if len(call.Transcription) > 100 {
+				summary["brief"] = call.Transcription[:100] + "..."
+			} else {
+				summary["brief"] = call.Transcription
+			}
+		}
+
+		summaries = append(summaries, summary)
+	}
+
+	return summaries
+}
+
+// buildTimelineSummaryPrompt builds an enhanced prompt for timeline summaries
+func (s *Server) buildTimelineSummaryPrompt(calls []*database.CallRecord, customPrompt string) string {
+	prompt := `You are analyzing radio communications from an emergency services scanner system. The data contains police, fire, EMS, and other emergency service communications.
+
+Context: This is real radio traffic data with timestamps, talkgroups (radio channels), frequencies, and transcriptions of audio communications.
+
+Instructions:
+- Provide a concise but informative summary
+- Identify patterns, significant events, and activity levels
+- Categorize types of incidents (police, fire, medical, traffic, etc.)
+- Note any unusual or noteworthy communications
+- Keep the summary focused and professional
+- Use clear, accessible language for emergency service communications
+
+`
+
+	if customPrompt != "" {
+		prompt += customPrompt + "\n\n"
+	}
+
+	prompt += "Radio Communications Data:\n"
+	for _, call := range calls {
+		timeStr := call.Timestamp.Format("15:04:05")
+		talkgroup := call.TalkgroupAlias
+		if talkgroup == "" {
+			talkgroup = call.TalkgroupID
+		}
+
+		transcription := call.Transcription
+		if transcription == "" {
+			transcription = "[No transcription available]"
+		}
+
+		prompt += fmt.Sprintf("• %s [%s] %s (%ds): %s\n",
+			timeStr,
+			talkgroup,
+			call.Frequency,
+			call.Duration,
+			transcription)
+	}
+
+	prompt += "\nAnalysis Requirements:\n"
+	prompt += "- Summarize key activities and patterns\n"
+	prompt += "- Identify service types involved (police, fire, EMS, utilities, etc.)\n"
+	prompt += "- Note significant incidents or unusual activity\n"
+	prompt += "- Provide context about communication volume and timing\n"
+	prompt += "- Keep response concise but informative (2-4 sentences)\n"
+
+	return prompt
 }

@@ -1516,4 +1516,319 @@ body {
     font-size: 12px;
     flex: 1;
     margin-left: 12px;
+}
+
+/* Modal animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+@keyframes slideIn {
+    from { 
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Modal close button hover effect */
+.modal-close:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Enhanced Timeline Styles */
+.timeline-hour-block {
+    margin-bottom: 24px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 8px;
+    background: var(--bg-card);
+    overflow: hidden;
+}
+
+.timeline-hour-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-secondary);
+}
+
+.timeline-hour-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.timeline-hour-label {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+
+.timeline-hour-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.timeline-hour-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.category-tag {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    border: 1px solid;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+}
+
+.timeline-hour-summary {
+    display: none;
+    padding: 0;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-secondary);
+    transition: all 0.3s ease;
+}
+
+.timeline-hour-summary.visible {
+    display: block;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.summary-content {
+    padding: 16px;
+}
+
+.summary-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.summary-title {
+    color: var(--accent-blue);
+    font-weight: 500;
+    font-family: var(--font-mono);
+}
+
+.summary-meta {
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.summary-text {
+    line-height: 1.6;
+    color: var(--text-primary);
+    font-size: 14px;
+    background: var(--bg-card);
+    padding: 12px;
+    border-radius: 6px;
+    border-left: 3px solid var(--accent-blue);
+}
+
+.timeline-hour-events {
+    padding: 0;
+}
+
+.timeline-hour-events .timeline-item {
+    border-bottom: 1px solid var(--border-secondary);
+    margin-bottom: 0;
+    padding: 12px 16px;
+}
+
+.timeline-hour-events .timeline-item:last-child {
+    border-bottom: none;
+}
+
+.summary-toggle {
+    transition: all 0.2s ease;
+}
+
+.summary-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--accent-blue);
+}
+
+.info-message {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* Enhanced Mobile Responsiveness */
+@media (max-width: 768px) {
+    .timeline-hour-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px;
+    }
+    
+    .timeline-hour-actions {
+        align-self: flex-end;
+        width: 100%;
+        justify-content: flex-end;
+    }
+    
+    .timeline-hour-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+    
+    .category-tag {
+        margin-right: 4px;
+        margin-bottom: 2px;
+    }
+    
+    .timeline-hour-summary {
+        /* Auto-expand summaries on mobile for better UX */
+        display: block;
+    }
+    
+    .timeline-hour-summary.visible {
+        background: var(--bg-tertiary);
+    }
+    
+    .summary-content {
+        padding: 12px;
+    }
+    
+    .summary-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+    
+    .summary-meta {
+        margin-left: 0;
+    }
+    
+    .timeline-hour-events .timeline-item {
+        padding: 12px;
+    }
+    
+    .controls {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .controls .btn,
+    .controls .btn-small {
+        flex: 1;
+        min-width: 120px;
+    }
+    
+    .controls .date-picker {
+        flex: 2;
+        min-width: 140px;
+    }
+    
+    .info-message {
+        flex-direction: column;
+        text-align: center;
+        gap: 12px;
+    }
+}
+
+/* Improved Timeline Item Styles */
+.timeline-item {
+    transition: all 0.2s ease;
+}
+
+.timeline-item:hover {
+    background: var(--bg-hover);
+}
+
+.timeline-item[data-service="POLICE"] {
+    border-left: 3px solid var(--police-color);
+}
+
+.timeline-item[data-service="FIRE"] {
+    border-left: 3px solid var(--fire-color);
+}
+
+.timeline-item[data-service="EMS"] {
+    border-left: 3px solid var(--ems-color);
+}
+
+.timeline-item[data-service="EMERGENCY"] {
+    border-left: 3px solid var(--emergency-color);
+}
+
+.timeline-item[data-service="PUBLIC_WORKS"] {
+    border-left: 3px solid var(--public-works-color);
+}
+
+.timeline-item[data-service="OTHER"] {
+    border-left: 3px solid var(--text-muted);
+}
+
+/* Enhanced accessibility */
+@media (prefers-reduced-motion: reduce) {
+    .timeline-hour-summary,
+    .summary-toggle,
+    .timeline-item {
+        transition: none;
+    }
+    
+    .timeline-hour-summary.visible {
+        animation: none;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .timeline-hour-block {
+        border: 2px solid var(--text-primary);
+    }
+    
+    .category-tag {
+        border-width: 2px;
+        font-weight: 600;
+    }
+    
+    .summary-text {
+        border-left-width: 4px;
+    }
 } 
