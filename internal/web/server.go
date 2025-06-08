@@ -47,6 +47,7 @@ type Server struct {
 	gemini          *genai.Client
 	lastAutoSummary *AutoSummary
 	summaryMu       sync.RWMutex
+	mu              sync.RWMutex
 }
 
 // CallRecord represents a call record for API responses
@@ -201,6 +202,9 @@ func (s *Server) setupRoutes() {
 	// Live streaming endpoints
 	api.Get("/live/stream", s.getLiveStream)
 	api.Get("/live/status", s.getLiveStatus)
+
+	// Debug endpoints (for development)
+	api.Post("/debug/broadcast-latest", s.debugBroadcastLatest)
 
 	// AI Summary endpoints (requires Gemini)
 	api.Post("/summary/generate", s.generateSummary)
@@ -732,12 +736,73 @@ func (s *Server) handleWebSocket(c *websocket.Conn) {
 		c.Close()
 	}()
 
+	s.mu.Lock()
 	s.clients[c] = true
+	clientCount := len(s.clients)
+	s.mu.Unlock()
 
+	s.logger.Info("WebSocket client connected", "total_clients", clientCount)
+
+	// Send initial status
+	status := fiber.Map{
+		"type":      "status",
+		"connected": true,
+		"timestamp": time.Now(),
+	}
+	if err := c.WriteJSON(status); err != nil {
+		s.logger.Error("Failed to send initial status", "error", err)
+	}
+
+	// Read messages from client (though we don't expect many)
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			delete(s.clients, c)
+			clientCount := len(s.clients)
+			s.mu.Unlock()
+			s.logger.Info("WebSocket client disconnected", "total_clients", clientCount)
+			c.Close()
+		}()
+
+		for {
+			_, _, err := c.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					s.logger.Warn("WebSocket read error", "error", err)
+				}
+				break
+			}
+		}
+	}()
+
+	// Listen for broadcast messages
 	for {
-		_, _, err := c.ReadMessage()
-		if err != nil {
-			break
+		select {
+		case message := <-s.broadcast:
+			s.logger.Debug("Broadcasting message to WebSocket clients", "message_size", len(message), "total_clients", clientCount)
+
+			s.mu.Lock()
+			activeClients := len(s.clients)
+			sentCount := 0
+			for client := range s.clients {
+				if err := client.WriteMessage(websocket.TextMessage, message); err != nil {
+					s.logger.Warn("Failed to send message to WebSocket client", "error", err)
+					delete(s.clients, client)
+					client.Close()
+				} else {
+					sentCount++
+				}
+			}
+			s.mu.Unlock()
+
+			s.logger.Debug("WebSocket broadcast completed", "sent_to", sentCount, "total_clients", activeClients)
+
+		case <-time.After(30 * time.Second):
+			// Ping to keep connection alive
+			if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
+				s.logger.Warn("Failed to send ping", "error", err)
+				return
+			}
 		}
 	}
 }
@@ -786,6 +851,12 @@ func (s *Server) sendToClients(data []byte) {
 
 // BroadcastNewCall sends a new call notification to all clients
 func (s *Server) BroadcastNewCall(call *database.CallRecord) {
+	s.logger.Info("Broadcasting new call via WebSocket",
+		"call_id", call.ID,
+		"filename", call.Filename,
+		"talkgroup", call.TalkgroupAlias,
+		"connected_clients", len(s.clients))
+
 	apiCall := CallRecord{
 		ID:              call.ID,
 		Filename:        call.Filename,
@@ -815,13 +886,17 @@ func (s *Server) BroadcastNewCall(call *database.CallRecord) {
 
 	data, err := json.Marshal(enhancedData)
 	if err != nil {
+		s.logger.Error("Failed to marshal new call data for WebSocket", "error", err)
 		return
 	}
 
+	s.logger.Debug("WebSocket message prepared", "data_size", len(data), "message_type", "new_call")
+
 	select {
 	case s.broadcast <- data:
+		s.logger.Debug("New call message sent to broadcast channel", "call_id", call.ID)
 	default:
-		// Channel is full, skip this broadcast
+		s.logger.Warn("Broadcast channel full, skipping new call message", "call_id", call.ID)
 	}
 }
 
@@ -1134,4 +1209,22 @@ func (s *Server) Stop() error {
 // GetPort returns the configured port
 func (s *Server) GetPort() int {
 	return s.config.Web.Port
+}
+
+// debugBroadcastLatest handles the debug endpoint to manually test WebSocket broadcasting with the most recent call
+func (s *Server) debugBroadcastLatest(c *fiber.Ctx) error {
+	// Get the most recent call
+	call, err := s.db.GetMostRecentCall()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": "Failed to fetch the most recent call",
+		})
+	}
+
+	// Broadcast the new call
+	s.BroadcastNewCall(call)
+
+	return c.JSON(fiber.Map{
+		"message": "Most recent call broadcasted successfully",
+	})
 }

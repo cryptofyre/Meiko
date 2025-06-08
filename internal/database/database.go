@@ -347,8 +347,10 @@ func (d *Database) GetCallRecord(id int) (*CallRecord, error) {
 		WHERE id = ?
 	`
 
+	row := d.db.QueryRow(query, id)
 	call := &CallRecord{}
-	err := d.db.QueryRow(query, id).Scan(
+
+	err := row.Scan(
 		&call.ID, &call.Filename, &call.Filepath, &call.Timestamp,
 		&call.Duration, &call.Frequency, &call.TalkgroupID,
 		&call.TalkgroupAlias, &call.TalkgroupGroup, &call.TranscriptionID,
@@ -357,9 +359,40 @@ func (d *Database) GetCallRecord(id int) (*CallRecord, error) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("call not found")
+			return nil, fmt.Errorf("call record with ID %d not found", id)
 		}
 		return nil, fmt.Errorf("failed to get call record: %w", err)
+	}
+
+	return call, nil
+}
+
+// GetMostRecentCall returns the most recent call record
+func (d *Database) GetMostRecentCall() (*CallRecord, error) {
+	query := `
+		SELECT id, filename, filepath, timestamp, duration, frequency, talkgroup_id, 
+		       talkgroup_alias, talkgroup_group, transcription_id, transcription, 
+		       processed, created_at, updated_at
+		FROM calls 
+		ORDER BY timestamp DESC 
+		LIMIT 1
+	`
+
+	row := d.db.QueryRow(query)
+	call := &CallRecord{}
+
+	err := row.Scan(
+		&call.ID, &call.Filename, &call.Filepath, &call.Timestamp,
+		&call.Duration, &call.Frequency, &call.TalkgroupID,
+		&call.TalkgroupAlias, &call.TalkgroupGroup, &call.TranscriptionID,
+		&call.Transcription, &call.Processed, &call.CreatedAt, &call.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no call records found")
+		}
+		return nil, fmt.Errorf("failed to get most recent call: %w", err)
 	}
 
 	return call, nil

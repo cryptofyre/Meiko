@@ -149,7 +149,10 @@ func (cp *CallProcessor) processFileEvent(ctx context.Context, event watcher.Fil
 
 	// Broadcast to web clients
 	if cp.webServer != nil {
+		cp.logger.Info("Broadcasting new call to web clients", "call_id", callRecord.ID, "filename", filepath.Base(event.Path))
 		cp.webServer.BroadcastNewCall(callRecord)
+	} else {
+		cp.logger.Warn("WebServer not set, cannot broadcast new call", "call_id", callRecord.ID)
 	}
 
 	cp.logger.Success("Successfully processed audio file",

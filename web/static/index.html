@@ -1219,6 +1219,10 @@
                             <i class="fas fa-volume-up"></i>
                             TEST AUDIO
                         </button>
+                        <button class="btn" onclick="testWebSocketBroadcast()" style="margin-left: 8px;">
+                            <i class="fas fa-broadcast-tower"></i>
+                            TEST WS
+                        </button>
                     </div>
                 </div>
 
@@ -3120,6 +3124,27 @@
             if (event.target === modal) {
                 closeCallModal();
             }
+        }
+
+        function testWebSocketBroadcast() {
+            console.log('Testing WebSocket broadcast...');
+            updateMeikoStatus("Testing WebSocket", "Triggering manual broadcast");
+            
+            fetch('/api/debug/broadcast-latest', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('WebSocket test broadcast result:', data);
+                updateMeikoStatus("WebSocket test sent", "Check console for results");
+            })
+            .catch(error => {
+                console.error('WebSocket test failed:', error);
+                updateMeikoStatus("WebSocket test failed", "Check console for details");
+            });
         }
     </script>
 </body>
