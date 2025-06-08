@@ -289,28 +289,40 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 
 	// Convert calls to timeline events
 	for _, call := range calls {
-		// Get enhanced talkgroup information
+		// Use the enhanced talkgroup information that was already processed with context awareness
 		var eventColor string
 		var eventIcon string
 		var eventTitle string
+		var serviceType talkgroups.ServiceType
 
 		if s.talkgroups != nil {
-			talkgroupInfo := s.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
+			// Get current talkgroup info as a fallback
 			deptInfo := s.talkgroups.GetDepartmentInfo(call.TalkgroupID)
+			serviceType = deptInfo.Type
+
+			// If the processor enhanced the TalkgroupGroup (contains emoji), use that classification
+			// to determine the appropriate department info for coloring and icon
+			if call.TalkgroupGroup != "" && call.TalkgroupGroup != "Unknown Department" {
+				// Extract service type from the enhanced group information
+				for st, dept := range s.talkgroups.GetServiceTypes() {
+					if strings.Contains(call.TalkgroupGroup, dept.Emoji) {
+						deptInfo = dept
+						serviceType = st
+						break
+					}
+				}
+				eventTitle = fmt.Sprintf("Call from %s", call.TalkgroupGroup)
+			} else {
+				// Fallback to department classification
+				talkgroupInfo := s.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
+				eventTitle = fmt.Sprintf("Call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
+			}
 
 			// Use department-specific colors and icons
 			eventColor = deptInfo.Color
 
-			// Use the stored TalkgroupGroup which now contains proper department classification
-			if call.TalkgroupGroup != "" && call.TalkgroupGroup != "Unknown Department" {
-				eventTitle = fmt.Sprintf("Call from %s", call.TalkgroupGroup)
-			} else {
-				// Fallback to department classification
-				eventTitle = fmt.Sprintf("Call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
-			}
-
-			// Set icon based on service type
-			switch deptInfo.Type {
+			// Set icon based on the enhanced service type
+			switch serviceType {
 			case talkgroups.ServicePolice:
 				eventIcon = "shield-alt"
 			case talkgroups.ServiceFire:
@@ -335,6 +347,7 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 			eventColor = "#3b82f6"
 			eventIcon = "phone"
 			eventTitle = fmt.Sprintf("Call on %s", call.TalkgroupAlias)
+			serviceType = talkgroups.ServiceOther
 		}
 
 		event := TimelineEvent{
@@ -353,11 +366,8 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 			},
 		}
 
-		// Add service type if available
-		if s.talkgroups != nil {
-			talkgroupInfo := s.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
-			event.Data["service_type"] = string(talkgroupInfo.ServiceType)
-		}
+		// Add the enhanced service type
+		event.Data["service_type"] = string(serviceType)
 
 		// Create description based on transcription
 		if call.Transcription != "" {

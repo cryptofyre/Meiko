@@ -2,6 +2,7 @@ package discord
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -105,18 +106,41 @@ func (c *Client) SendCallNotification(call *database.CallRecord) error {
 		return nil
 	}
 
-	// Get enhanced talkgroup information
+	// Use the enhanced talkgroup information that was already processed with context awareness
+	// The processor has already done intelligent classification, so we should use those results
 	var deptInfo *talkgroups.DepartmentType
 	var talkgroupInfo *talkgroups.TalkgroupInfo
 	var colorHex int
 
 	if c.talkgroups != nil {
-		talkgroupInfo = c.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
+		// Start with the current talkgroup's department info
 		deptInfo = c.talkgroups.GetDepartmentInfo(call.TalkgroupID)
+
+		// If the processor enhanced the TalkgroupGroup (contains emoji), use that classification
+		// to determine the appropriate department info for coloring and emoji
+		if call.TalkgroupGroup != "" && call.TalkgroupGroup != "Unknown Department" {
+			// Extract service type from the enhanced group information
+			for _, dept := range c.talkgroups.GetServiceTypes() {
+				if strings.Contains(call.TalkgroupGroup, dept.Emoji) {
+					deptInfo = dept
+					break
+				}
+			}
+		}
 
 		// Convert hex color to Discord integer
 		if color, err := parseHexColor(deptInfo.Color); err == nil {
 			colorHex = color
+		}
+
+		// Create talkgroup info using the processed information
+		talkgroupInfo = &talkgroups.TalkgroupInfo{
+			ID:          call.TalkgroupID,
+			Name:        call.TalkgroupAlias,
+			Group:       call.TalkgroupGroup, // Use the enhanced group from processor
+			ServiceType: deptInfo.Type,
+			Emoji:       deptInfo.Emoji,
+			ColorHex:    deptInfo.Color,
 		}
 	}
 
