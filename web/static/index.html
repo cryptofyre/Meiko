@@ -1215,6 +1215,10 @@
                             <i class="fas fa-play"></i>
                             START SCANNING
                         </button>
+                        <button class="btn" onclick="testAudioPlayback()" style="margin-left: 8px;">
+                            <i class="fas fa-volume-up"></i>
+                            TEST AUDIO
+                        </button>
                     </div>
                 </div>
 
@@ -1559,6 +1563,11 @@
                 case 'live-scanner':
                     if (!liveScanner.waveformCanvas) {
                         initLiveScanner();
+                    }
+                    // Auto-start scanner when tab is opened for testing
+                    if (!liveScanner.isActive) {
+                        console.log('Live Scanner tab opened - ready to start');
+                        updateMeikoStatus("Live Scanner ready", "Click START SCANNING to begin");
                     }
                     break;
                 case 'calls':
@@ -2585,7 +2594,10 @@
             // Update Meiko status
             updateMeikoStatus("Live scanner activated", "Monitoring all frequencies");
             
-            console.log('Live scanner started');
+            console.log('Live scanner started - isActive:', liveScanner.isActive);
+            
+            // Show status in UI
+            document.getElementById('active-frequency').textContent = 'Live Scanner Active - Waiting for calls';
         }
 
         function stopLiveScanner() {
@@ -2679,15 +2691,23 @@
         }
 
         function playLiveCall(callData) {
-            if (!liveScanner.isActive) return;
+            console.log('playLiveCall called with:', callData);
+            
+            if (!liveScanner.isActive) {
+                console.log('Live scanner not active, aborting playback');
+                return;
+            }
             
             // Stop previous audio
             if (liveScanner.currentAudio) {
+                console.log('Stopping previous audio');
                 liveScanner.currentAudio.pause();
             }
             
             // Create new audio instance
-            liveScanner.currentAudio = new Audio(`/api/calls/${callData.id}/audio`);
+            const audioUrl = `/api/calls/${callData.id}/audio`;
+            console.log('Creating audio instance for URL:', audioUrl);
+            liveScanner.currentAudio = new Audio(audioUrl);
             liveScanner.currentAudio.volume = liveScanner.volume;
             
             // Update current call info
@@ -2698,23 +2718,117 @@
             waveformContainer.classList.add('playing');
             
             // Set up audio event listeners
+            liveScanner.currentAudio.addEventListener('loadstart', () => {
+                console.log('Audio loading started');
+            });
+            
+            liveScanner.currentAudio.addEventListener('canplay', () => {
+                console.log('Audio can play');
+            });
+            
+            liveScanner.currentAudio.addEventListener('loadeddata', () => {
+                console.log('Audio data loaded');
+            });
+            
             liveScanner.currentAudio.addEventListener('ended', () => {
+                console.log('Audio playback ended');
                 waveformContainer.classList.remove('playing');
                 hideCurrentCallInfo();
             });
             
             liveScanner.currentAudio.addEventListener('error', (e) => {
                 console.error('Live audio playback error:', e);
+                console.error('Audio error details:', liveScanner.currentAudio.error);
                 waveformContainer.classList.remove('playing');
                 hideCurrentCallInfo();
+                
+                // Show user-friendly error message
+                updateMeikoStatus("Audio playback failed", "Check console for details");
             });
             
-            // Play the audio
-            liveScanner.currentAudio.play().catch(error => {
-                console.error('Failed to play live audio:', error);
+            liveScanner.currentAudio.addEventListener('play', () => {
+                console.log('Audio started playing');
             });
+            
+            liveScanner.currentAudio.addEventListener('pause', () => {
+                console.log('Audio paused');
+            });
+            
+            // Attempt to play the audio
+            console.log('Attempting to play audio...');
+            const playPromise = liveScanner.currentAudio.play();
+            
+            if (playPromise !== undefined) {
+                playPromise
+                    .then(() => {
+                        console.log('Audio playback started successfully');
+                    })
+                    .catch(error => {
+                        console.error('Failed to play live audio:', error);
+                        
+                        // Handle autoplay restriction
+                        if (error.name === 'NotAllowedError') {
+                            console.log('Autoplay blocked by browser - user interaction required');
+                            updateMeikoStatus("Click to enable audio", "Browser autoplay blocked");
+                            
+                            // Show a play button overlay or notification
+                            showAutoplayNotification(callData);
+                        } else {
+                            console.error('Other audio error:', error);
+                            updateMeikoStatus("Audio error", error.message);
+                        }
+                        
+                        waveformContainer.classList.remove('playing');
+                        hideCurrentCallInfo();
+                    });
+            }
             
             liveScanner.lastCallId = callData.id;
+            console.log('Updated lastCallId to:', liveScanner.lastCallId);
+        }
+
+        function showAutoplayNotification(callData) {
+            // Create a temporary notification to enable audio
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: var(--accent-blue);
+                color: white;
+                padding: 16px;
+                border-radius: 4px;
+                z-index: 1001;
+                cursor: pointer;
+                animation: slideIn 0.3s ease-out;
+            `;
+            notification.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 4px;">🔊 Enable Audio</div>
+                <div style="font-size: 12px;">Click to allow audio playback</div>
+            `;
+            
+            notification.addEventListener('click', () => {
+                // User interaction - now we can play audio
+                liveScanner.currentAudio.play()
+                    .then(() => {
+                        console.log('Audio enabled by user interaction');
+                        updateMeikoStatus("Audio enabled", "Live scanning active");
+                    })
+                    .catch(err => {
+                        console.error('Still failed to play after user interaction:', err);
+                    });
+                
+                document.body.removeChild(notification);
+            });
+            
+            document.body.appendChild(notification);
+            
+            // Auto-remove after 10 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
+            }, 10000);
         }
 
         function showCurrentCallInfo(callData) {
@@ -2798,6 +2912,78 @@
             liveScanner.transcriptionItems = [];
         }
 
+        function testAudioPlayback() {
+            console.log('Testing audio playback...');
+            updateMeikoStatus("Testing audio", "Fetching recent call for test");
+            
+            // Get the most recent call for testing
+            fetch('/api/calls?limit=1')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.calls && data.calls.length > 0) {
+                        const testCall = data.calls[0];
+                        console.log('Using call for test:', testCall);
+                        
+                        updateMeikoStatus("Playing test audio", `Testing with call #${testCall.id}`);
+                        
+                        // Create test audio
+                        const testAudio = new Audio(`/api/calls/${testCall.id}/audio`);
+                        testAudio.volume = liveScanner.volume;
+                        
+                        testAudio.addEventListener('loadeddata', () => {
+                            console.log('Test audio loaded successfully');
+                        });
+                        
+                        testAudio.addEventListener('error', (e) => {
+                            console.error('Test audio error:', e);
+                            updateMeikoStatus("Audio test failed", "Check console for details");
+                        });
+                        
+                        testAudio.addEventListener('ended', () => {
+                            console.log('Test audio finished');
+                            updateMeikoStatus("Audio test complete", "Audio system working");
+                        });
+                        
+                        // Attempt to play
+                        testAudio.play()
+                            .then(() => {
+                                console.log('Test audio playing successfully');
+                                updateMeikoStatus("Audio test playing", "Audio system working");
+                                
+                                // Update current call info for test
+                                showCurrentCallInfo(testCall);
+                                
+                                // Show waveform
+                                const waveformContainer = document.getElementById('waveform-container');
+                                waveformContainer.classList.add('playing');
+                                
+                                // Remove visual feedback when done
+                                testAudio.addEventListener('ended', () => {
+                                    waveformContainer.classList.remove('playing');
+                                    hideCurrentCallInfo();
+                                });
+                                
+                            })
+                            .catch(error => {
+                                console.error('Test audio failed to play:', error);
+                                if (error.name === 'NotAllowedError') {
+                                    updateMeikoStatus("Audio blocked", "Browser requires user interaction");
+                                    showAutoplayNotification(testCall);
+                                } else {
+                                    updateMeikoStatus("Audio error", error.message);
+                                }
+                            });
+                    } else {
+                        updateMeikoStatus("No calls available", "No audio files to test with");
+                        console.log('No calls available for testing');
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to fetch calls for test:', error);
+                    updateMeikoStatus("Test failed", "Could not fetch call data");
+                });
+        }
+
         // Update the main tab switching to handle live scanner
         function switchTab(tabName) {
             // Update navigation
@@ -2823,6 +3009,11 @@
                     if (!liveScanner.waveformCanvas) {
                         initLiveScanner();
                     }
+                    // Auto-start scanner when tab is opened for testing
+                    if (!liveScanner.isActive) {
+                        console.log('Live Scanner tab opened - ready to start');
+                        updateMeikoStatus("Live Scanner ready", "Click START SCANNING to begin");
+                    }
                     break;
                 case 'calls':
                     loadCalls();
@@ -2838,9 +3029,14 @@
 
         // Enhanced WebSocket message handling for live scanner
         function handleWebSocketMessageForLiveScanner(data) {
+            console.log('Live Scanner received WebSocket message:', data);
+            
             if (data.type === 'new_call' && liveScanner.isActive) {
                 const callData = data.data;
                 const liveScannerData = data.live_scanner;
+                
+                console.log('Live Scanner processing new call:', callData);
+                console.log('Live Scanner data:', liveScannerData);
                 
                 // Add to transcription feed
                 addTranscriptionToFeed(callData);
@@ -2850,25 +3046,38 @@
                     const freqInfo = liveScannerData.frequency_info;
                     document.getElementById('active-frequency').textContent = 
                         `${freqInfo.frequency} • ${freqInfo.description}`;
+                    console.log('Updated frequency display:', freqInfo);
                 }
                 
                 // Use real waveform data if available
                 if (liveScannerData && liveScannerData.waveform_data) {
+                    console.log('Drawing real waveform data:', liveScannerData.waveform_data.length, 'points');
                     drawRealWaveform(liveScannerData.waveform_data);
                 }
                 
                 // Auto-play if this is a new call and auto-play is enabled
-                if (callData.id !== liveScanner.lastCallId && 
-                    liveScannerData && liveScannerData.should_auto_play) {
-                    // Small delay to ensure audio file is ready
-                    setTimeout(() => {
-                        playLiveCall(callData);
-                    }, 500);
+                if (callData.id !== liveScanner.lastCallId) {
+                    console.log('Attempting to play new call:', callData.id, 'Previous call:', liveScanner.lastCallId);
+                    
+                    if (liveScannerData && liveScannerData.should_auto_play) {
+                        console.log('Auto-play enabled, starting playback in 500ms');
+                        // Small delay to ensure audio file is ready
+                        setTimeout(() => {
+                            playLiveCall(callData);
+                        }, 500);
+                    } else {
+                        console.log('Auto-play disabled or no live scanner data');
+                    }
+                } else {
+                    console.log('Same call ID, skipping auto-play');
                 }
+            } else if (data.type === 'new_call' && !liveScanner.isActive) {
+                console.log('Live Scanner not active, ignoring new call');
             }
             
             // Handle live scanner specific events
             if (data.type === 'live_scanner_event') {
+                console.log('Received live scanner event:', data.event, data.data);
                 switch(data.event) {
                     case 'frequency_change':
                         updateFrequencyDisplay(data.data);
