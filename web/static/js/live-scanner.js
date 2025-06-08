@@ -15,7 +15,19 @@ let liveScanner = {
     currentTranscriptionElement: null,
     transcriptionHighlightInterval: null,
     currentWordIndex: 0,
-    transcriptionWords: []
+    transcriptionWords: [],
+    // Audio Context and Visualizer
+    audioContext: null,
+    analyser: null,
+    audioSource: null,
+    frequencyData: null,
+    isAudioContextReady: false,
+    // Safari compatibility
+    autoplayBlocked: false,
+    enablePromptShown: false,
+    // Animation state
+    isStartingUp: false,
+    startupAnimationId: null
 };
 
 // Initialize Live Scanner
@@ -40,11 +52,241 @@ function initLiveScanner() {
         }
     });
     
+    // Initialize audio context (will be resumed on user interaction)
+    initAudioContext();
+    
     // Initialize waveform
     drawStandbyWaveform();
     
     // Set up keyboard shortcuts
     setupKeyboardShortcuts();
+    
+    // Set up animation styles
+    setupAnimationStyles();
+}
+
+// Set up CSS animation styles
+function setupAnimationStyles() {
+    // Check if styles already exist
+    if (document.getElementById('live-scanner-animations')) {
+        return;
+    }
+    
+    const style = document.createElement('style');
+    style.id = 'live-scanner-animations';
+    style.textContent = `
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes slideOutRight {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 5px rgba(0, 212, 255, 0.3); }
+            50% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.8); }
+        }
+        
+        /* Live Scanner specific animations */
+        .scanner-startup {
+            animation: glow 2s ease-in-out infinite;
+        }
+        
+        .scanner-active {
+            transition: all 0.3s ease-out;
+        }
+        
+        .scanner-indicator.powering-up {
+            animation: pulse 0.8s ease-in-out infinite;
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+        }
+        
+        .scanner-indicator.frequency-sweep {
+            animation: pulse 0.5s ease-in-out infinite;
+            background: linear-gradient(135deg, #f7931e, #00d4ff);
+        }
+        
+        .scanner-indicator.live {
+            background: linear-gradient(135deg, #00d4ff, #00ff88);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+        
+        .frequency-startup {
+            animation: pulse 1s ease-in-out infinite;
+            color: var(--accent-blue) !important;
+        }
+        
+        .frequency-active {
+            transition: color 0.3s ease-out;
+        }
+        
+        .transcription-item.new {
+            animation: slideIn 0.5s ease-out;
+            border-left: 3px solid var(--accent-green);
+        }
+        
+        .transcription-item.active-playback {
+            background: rgba(0, 212, 255, 0.1);
+            border-left: 3px solid var(--accent-blue);
+            animation: glow 2s ease-in-out infinite;
+        }
+        
+        .transcription-word.highlighted {
+            background: rgba(0, 255, 136, 0.2);
+            color: var(--accent-green);
+            transition: all 0.1s ease;
+        }
+        
+        .transcription-word.current {
+            background: rgba(0, 212, 255, 0.3);
+            color: var(--accent-blue);
+            font-weight: 600;
+            animation: pulse 1s ease-in-out infinite;
+        }
+        
+        .live-transcription-container.active {
+            animation: slideIn 0.4s ease-out;
+        }
+        
+        .progress-fill {
+            transition: width 0.1s linear;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+        }
+        
+        /* Waveform container animations */
+        .waveform-container.playing {
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+            animation: glow 3s ease-in-out infinite;
+        }
+        
+        /* Modal animations */
+        .modal {
+            backdrop-filter: blur(2px);
+        }
+        
+        /* Button hover effects */
+        .transcription-action-btn {
+            transition: all 0.2s ease;
+        }
+        
+        .transcription-action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Status indicator transitions */
+        .status-transitioning {
+            transition: all 0.3s ease-in-out;
+        }
+        
+        /* Queue animations */
+        .call-queue-container.active {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .queue-item {
+            transition: all 0.2s ease;
+        }
+        
+        .queue-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+    `;
+    
+    document.head.appendChild(style);
+}
+
+// Initialize Audio Context for real-time visualization
+function initAudioContext() {
+    try {
+        // Use webkit prefix for Safari compatibility
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        liveScanner.audioContext = new AudioContext();
+        
+        // Create analyser node for visualization
+        liveScanner.analyser = liveScanner.audioContext.createAnalyser();
+        liveScanner.analyser.fftSize = 512;
+        liveScanner.analyser.smoothingTimeConstant = 0.8;
+        
+        // Create frequency data array
+        liveScanner.frequencyData = new Uint8Array(liveScanner.analyser.frequencyBinCount);
+        
+        console.log('Audio context initialized successfully');
+    } catch (error) {
+        console.warn('Could not initialize audio context:', error);
+        liveScanner.isAudioContextReady = false;
+        return;
+    }
+    
+    // Handle audio context state changes (especially for Safari)
+    liveScanner.audioContext.addEventListener('statechange', () => {
+        console.log('Audio context state changed to:', liveScanner.audioContext.state);
+        
+        if (liveScanner.audioContext.state === 'running') {
+            liveScanner.isAudioContextReady = true;
+            liveScanner.autoplayBlocked = false;
+        } else if (liveScanner.audioContext.state === 'suspended') {
+            liveScanner.isAudioContextReady = false;
+        }
+    });
+}
+
+// Resume audio context on user interaction (required for Safari)
+function resumeAudioContext() {
+    if (liveScanner.audioContext && liveScanner.audioContext.state === 'suspended') {
+        console.log('Resuming audio context...');
+        return liveScanner.audioContext.resume();
+    }
+    return Promise.resolve();
+}
+
+// Connect audio element to analyser for real-time visualization
+function connectAudioToAnalyser(audioElement) {
+    if (!liveScanner.audioContext || !liveScanner.analyser) {
+        console.warn('Audio context not available for visualization');
+        return;
+    }
+    
+    try {
+        // Disconnect previous source if it exists
+        if (liveScanner.audioSource) {
+            liveScanner.audioSource.disconnect();
+        }
+        
+        // Create new audio source
+        liveScanner.audioSource = liveScanner.audioContext.createMediaElementSource(audioElement);
+        
+        // Connect: source -> analyser -> destination
+        liveScanner.audioSource.connect(liveScanner.analyser);
+        liveScanner.analyser.connect(liveScanner.audioContext.destination);
+        
+        console.log('Audio connected to analyser for visualization');
+    } catch (error) {
+        console.warn('Could not connect audio to analyser:', error);
+    }
 }
 
 function resizeWaveformCanvas() {
@@ -175,6 +417,98 @@ function drawRealWaveform(waveformData) {
     updateTimeIndicator();
 }
 
+// New function to draw real-time audio visualization
+function drawAudioVisualization() {
+    if (!liveScanner.analyser || !liveScanner.frequencyData || !liveScanner.isPlaying) {
+        return;
+    }
+    
+    // Get current frequency data
+    liveScanner.analyser.getByteFrequencyData(liveScanner.frequencyData);
+    
+    const ctx = liveScanner.waveformContext;
+    const canvas = liveScanner.waveformCanvas;
+    
+    // Clear canvas with gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, '#0a0a0a');
+    gradient.addColorStop(0.5, '#111111');
+    gradient.addColorStop(1, '#0a0a0a');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate bar dimensions
+    const barCount = Math.min(64, liveScanner.frequencyData.length);
+    const barWidth = (canvas.width / barCount) * 0.8;
+    const barSpacing = canvas.width / barCount;
+    const centerY = canvas.height / 2;
+    
+    // Create dynamic gradient based on audio intensity
+    const avgIntensity = liveScanner.frequencyData.reduce((a, b) => a + b, 0) / liveScanner.frequencyData.length;
+    const intensityRatio = avgIntensity / 255;
+    
+    const waveGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    waveGradient.addColorStop(0, `rgba(0, 212, 255, ${0.9 + intensityRatio * 0.1})`);
+    waveGradient.addColorStop(0.3, `rgba(0, 255, 136, ${0.8 + intensityRatio * 0.2})`);
+    waveGradient.addColorStop(0.7, `rgba(0, 255, 136, ${0.6 + intensityRatio * 0.2})`);
+    waveGradient.addColorStop(1, `rgba(0, 212, 255, ${0.5 + intensityRatio * 0.3})`);
+    
+    ctx.fillStyle = waveGradient;
+    
+    // Draw frequency bars with smooth animation
+    for (let i = 0; i < barCount; i++) {
+        const dataIndex = Math.floor((i / barCount) * liveScanner.frequencyData.length);
+        const amplitude = (liveScanner.frequencyData[dataIndex] / 255) * (centerY * 0.8);
+        const x = i * barSpacing + (barSpacing - barWidth) / 2;
+        
+        // Add subtle bar-to-bar variation for more organic look
+        const variation = Math.sin(Date.now() * 0.01 + i * 0.5) * 0.1 + 1;
+        const finalAmplitude = amplitude * variation;
+        
+        // Draw main bar
+        ctx.fillRect(x, centerY - finalAmplitude, barWidth, finalAmplitude * 2);
+        
+        // Add glow effect for high amplitudes
+        if (amplitude > centerY * 0.5) {
+            ctx.shadowColor = '#00ff88';
+            ctx.shadowBlur = 8;
+            ctx.fillRect(x, centerY - finalAmplitude, barWidth, finalAmplitude * 2);
+            ctx.shadowBlur = 0;
+        }
+    }
+    
+    // Add reflection effect
+    ctx.globalAlpha = 0.2;
+    ctx.scale(1, -1);
+    ctx.translate(0, -canvas.height);
+    
+    for (let i = 0; i < barCount; i++) {
+        const dataIndex = Math.floor((i / barCount) * liveScanner.frequencyData.length);
+        const amplitude = (liveScanner.frequencyData[dataIndex] / 255) * (centerY * 0.4);
+        const x = i * barSpacing + (barSpacing - barWidth) / 2;
+        const variation = Math.sin(Date.now() * 0.01 + i * 0.5) * 0.1 + 1;
+        const finalAmplitude = amplitude * variation;
+        
+        ctx.fillRect(x, centerY - finalAmplitude, barWidth, finalAmplitude);
+    }
+    
+    // Reset transformations
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    
+    // Add pulsing center line based on bass frequencies
+    const bassIntensity = liveScanner.frequencyData.slice(0, 8).reduce((a, b) => a + b, 0) / (8 * 255);
+    ctx.strokeStyle = `rgba(0, 255, 136, ${0.3 + bassIntensity * 0.7})`;
+    ctx.lineWidth = 1 + bassIntensity * 2;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(canvas.width, centerY);
+    ctx.stroke();
+    
+    // Add time indicator
+    updateTimeIndicator();
+}
+
 function updateTimeIndicator() {
     const now = new Date();
     const timeString = now.toLocaleTimeString('en-US', { 
@@ -195,17 +529,91 @@ function toggleLiveScanner() {
 }
 
 function startLiveScanner() {
-    liveScanner.isActive = true;
+    if (liveScanner.isStartingUp) return;
     
-    // Update UI
+    liveScanner.isStartingUp = true;
+    
+    // Resume audio context first
+    resumeAudioContext().then(() => {
+        // Start the smooth startup animation
+        animateStartup();
+    });
+}
+
+function animateStartup() {
     const button = document.getElementById('scanner-toggle');
     const status = document.getElementById('scanner-status');
+    const waveformContainer = document.getElementById('waveform-container');
+    const freqDisplay = document.getElementById('active-frequency');
     
+    // Update button immediately to show loading state
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> STARTING...';
+    button.disabled = true;
+    
+    // Add startup animation classes
+    waveformContainer.classList.add('scanner-startup');
+    
+    // Animate status indicator
+    status.classList.add('status-transitioning');
+    
+    // Phase 1: Power up animation (500ms)
+    setTimeout(() => {
+        status.className = 'scanner-indicator powering-up';
+        status.querySelector('span').textContent = 'POWERING UP';
+        
+        // Show scanning frequency
+        freqDisplay.textContent = 'Initializing scanner array...';
+        freqDisplay.classList.add('frequency-startup');
+        
+        // Phase 2: Frequency sweep animation (1000ms)
+        setTimeout(() => {
+            status.className = 'scanner-indicator frequency-sweep';
+            status.querySelector('span').textContent = 'SCANNING';
+            
+            // Simulate frequency sweep
+            const frequencies = ['400.000', '450.000', '453.100', '460.000', '470.000'];
+            let freqIndex = 0;
+            
+            const sweepInterval = setInterval(() => {
+                freqDisplay.textContent = `Scanning ${frequencies[freqIndex]} MHz`;
+                freqIndex = (freqIndex + 1) % frequencies.length;
+                
+                if (freqIndex === 0) {
+                    // One full sweep completed, move to active state
+                    clearInterval(sweepInterval);
+                    completeStartup();
+                }
+            }, 150);
+            
+        }, 500);
+    }, 200);
+}
+
+function completeStartup() {
+    const button = document.getElementById('scanner-toggle');
+    const status = document.getElementById('scanner-status');
+    const waveformContainer = document.getElementById('waveform-container');
+    const freqDisplay = document.getElementById('active-frequency');
+    
+    // Activate the scanner
+    liveScanner.isActive = true;
+    liveScanner.isStartingUp = false;
+    
+    // Final UI updates with smooth transitions
     button.innerHTML = '<i class="fas fa-stop"></i> STOP SCANNING';
     button.classList.add('btn-primary');
+    button.disabled = false;
     
     status.className = 'scanner-indicator live';
     status.querySelector('span').textContent = 'LIVE';
+    status.classList.remove('status-transitioning');
+    
+    waveformContainer.classList.remove('scanner-startup');
+    waveformContainer.classList.add('scanner-active');
+    
+    freqDisplay.textContent = 'Live Scanner Active - Waiting for calls';
+    freqDisplay.classList.remove('frequency-startup');
+    freqDisplay.classList.add('frequency-active');
     
     // Start waveform animation
     animateWaveform();
@@ -216,19 +624,23 @@ function startLiveScanner() {
     // Update Meiko status
     updateMeikoStatus("Live scanner activated", "Monitoring all frequencies");
     
-    console.log('Live scanner started - isActive:', liveScanner.isActive);
-    
-    // Show status in UI
-    document.getElementById('active-frequency').textContent = 'Live Scanner Active - Waiting for calls';
+    console.log('Live scanner startup complete - isActive:', liveScanner.isActive);
 }
 
 function stopLiveScanner() {
     liveScanner.isActive = false;
+    liveScanner.isStartingUp = false;
     
     // Stop any playing audio
     if (liveScanner.currentAudio) {
         liveScanner.currentAudio.pause();
         liveScanner.currentAudio = null;
+    }
+    
+    // Disconnect audio source
+    if (liveScanner.audioSource) {
+        liveScanner.audioSource.disconnect();
+        liveScanner.audioSource = null;
     }
     
     // Clear queue and reset state
@@ -242,23 +654,35 @@ function stopLiveScanner() {
         liveScanner.animationId = null;
     }
     
-    // Update UI
+    if (liveScanner.startupAnimationId) {
+        cancelAnimationFrame(liveScanner.startupAnimationId);
+        liveScanner.startupAnimationId = null;
+    }
+    
+    // Update UI with smooth transitions
     const button = document.getElementById('scanner-toggle');
     const status = document.getElementById('scanner-status');
     const waveformContainer = document.getElementById('waveform-container');
     const currentCallInfo = document.getElementById('current-call-info');
+    const freqDisplay = document.getElementById('active-frequency');
     
     button.innerHTML = '<i class="fas fa-play"></i> START SCANNING';
     button.classList.remove('btn-primary');
+    button.disabled = false;
     
     status.className = 'scanner-indicator standby';
     status.querySelector('span').textContent = 'STANDBY';
     
-    waveformContainer.classList.remove('playing');
+    waveformContainer.classList.remove('playing', 'scanner-startup', 'scanner-active');
     currentCallInfo.classList.remove('active');
     
-    // Reset to standby waveform
-    drawStandbyWaveform();
+    freqDisplay.classList.remove('frequency-startup', 'frequency-active');
+    freqDisplay.textContent = 'Scanner offline';
+    
+    // Reset to standby waveform with smooth transition
+    setTimeout(() => {
+        drawStandbyWaveform();
+    }, 300);
     
     // Update Meiko status
     updateMeikoStatus("Scanner stopped", "Standing by");
@@ -269,18 +693,23 @@ function stopLiveScanner() {
 function animateWaveform() {
     if (!liveScanner.isActive) return;
     
-    // Generate fake waveform data for demonstration
-    const dataPoints = 100;
-    const audioData = new Array(dataPoints);
-    
-    for (let i = 0; i < dataPoints; i++) {
-        // Create more realistic looking audio data
-        const baseWave = Math.sin(Date.now() * 0.001 + i * 0.1) * 0.3;
-        const noise = (Math.random() - 0.5) * 0.1;
-        audioData[i] = baseWave + noise;
+    // Use real audio visualization if audio is playing and context is ready
+    if (liveScanner.isPlaying && liveScanner.analyser && liveScanner.isAudioContextReady) {
+        drawAudioVisualization();
+    } else {
+        // Generate fake waveform data for idle state
+        const dataPoints = 100;
+        const audioData = new Array(dataPoints);
+        
+        for (let i = 0; i < dataPoints; i++) {
+            // Create more realistic looking audio data with reduced intensity when idle
+            const baseWave = Math.sin(Date.now() * 0.001 + i * 0.1) * 0.2;
+            const noise = (Math.random() - 0.5) * 0.05;
+            audioData[i] = baseWave + noise;
+        }
+        
+        drawLiveWaveform(audioData);
     }
-    
-    drawLiveWaveform(audioData);
     
     liveScanner.animationId = requestAnimationFrame(animateWaveform);
 }
@@ -360,6 +789,12 @@ function startPlayingCall(callData) {
     liveScanner.currentAudio = new Audio(audioUrl);
     liveScanner.currentAudio.volume = liveScanner.volume;
     
+    // Enable CORS for audio if needed
+    liveScanner.currentAudio.crossOrigin = 'anonymous';
+    
+    // Preload the audio
+    liveScanner.currentAudio.preload = 'auto';
+    
     // Update current call info
     showCurrentCallInfo(callData);
     
@@ -374,6 +809,10 @@ function startPlayingCall(callData) {
     
     liveScanner.currentAudio.addEventListener('canplay', () => {
         console.log('Audio can play');
+        // Connect to visualizer when audio is ready
+        if (liveScanner.audioContext && liveScanner.isAudioContextReady) {
+            connectAudioToAnalyser(liveScanner.currentAudio);
+        }
     });
     
     liveScanner.currentAudio.addEventListener('loadeddata', () => {
@@ -416,36 +855,52 @@ function startPlayingCall(callData) {
     
     // Attempt to play the audio
     console.log('Attempting to play audio...');
-    const playPromise = liveScanner.currentAudio.play();
     
-    if (playPromise !== undefined) {
-        playPromise
-            .then(() => {
-                console.log('Audio playback started successfully');
-            })
-            .catch(error => {
-                console.error('Failed to play live audio:', error);
-                
-                // Handle autoplay restriction
-                if (error.name === 'NotAllowedError') {
-                    console.log('Autoplay blocked by browser - user interaction required');
-                    updateMeikoStatus("Click to enable audio", "Browser autoplay blocked");
+    // Resume audio context first (especially important for Safari)
+    resumeAudioContext().then(() => {
+        const playPromise = liveScanner.currentAudio.play();
+        
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    console.log('Audio playback started successfully');
+                    liveScanner.autoplayBlocked = false;
+                    liveScanner.enablePromptShown = false;
+                })
+                .catch(error => {
+                    console.error('Failed to play live audio:', error);
                     
-                    // Show a play button overlay or notification
-                    showAutoplayNotification(callData);
-                } else {
-                    console.error('Other audio error:', error);
-                    updateMeikoStatus("Audio error", error.message);
-                }
-                
-                waveformContainer.classList.remove('playing');
-                hideCurrentCallInfo();
-                
-                // Mark as not playing and clear current call
-                liveScanner.isPlaying = false;
-                liveScanner.currentCall = null;
-            });
-    }
+                    // Handle autoplay restriction
+                    if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
+                        console.log('Autoplay blocked by browser - user interaction required');
+                        liveScanner.autoplayBlocked = true;
+                        
+                        // Only show notification if not already shown
+                        if (!liveScanner.enablePromptShown) {
+                            updateMeikoStatus("Click to enable audio", "Browser autoplay blocked");
+                            showAutoplayNotification(callData);
+                            liveScanner.enablePromptShown = true;
+                        }
+                    } else {
+                        console.error('Other audio error:', error);
+                        updateMeikoStatus("Audio error", error.message);
+                        
+                        waveformContainer.classList.remove('playing');
+                        hideCurrentCallInfo();
+                        
+                        // Mark as not playing and clear current call
+                        liveScanner.isPlaying = false;
+                        liveScanner.currentCall = null;
+                        
+                        // Try to play next call
+                        playNextInQueue();
+                    }
+                });
+        }
+    }).catch(error => {
+        console.error('Could not resume audio context:', error);
+        updateMeikoStatus("Audio context error", "Could not initialize audio");
+    });
     
     liveScanner.lastCallId = callData.id;
     console.log('Updated lastCallId to:', liveScanner.lastCallId);
@@ -533,47 +988,121 @@ function skipCurrentCall() {
 }
 
 function showAutoplayNotification(callData) {
-    // Create a temporary notification to enable audio
+    // Check if notification already exists
+    const existingNotification = document.getElementById('autoplay-notification');
+    if (existingNotification) {
+        console.log('Autoplay notification already shown');
+        return;
+    }
+    
+    // Create a persistent notification to enable audio
     const notification = document.createElement('div');
+    notification.id = 'autoplay-notification';
     notification.style.cssText = `
         position: fixed;
         top: 20px;
         right: 20px;
-        background: var(--accent-blue);
+        background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
         color: white;
-        padding: 16px;
-        border-radius: 4px;
+        padding: 16px 20px;
+        border-radius: 8px;
         z-index: 1001;
         cursor: pointer;
-        animation: slideIn 0.3s ease-out;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        animation: slideInRight 0.4s ease-out;
+        max-width: 300px;
+        user-select: none;
     `;
     notification.innerHTML = `
-        <div style="font-weight: 600; margin-bottom: 4px;">🔊 Enable Audio</div>
-        <div style="font-size: 12px;">Click to allow audio playback</div>
+        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <i class="fas fa-volume-up" style="margin-right: 8px; font-size: 18px;"></i>
+            <span style="font-weight: 600;">Enable Audio Playback</span>
+        </div>
+        <div style="font-size: 13px; margin-bottom: 12px; opacity: 0.9;">
+            Browser blocked autoplay. Click here to enable live scanner audio.
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <small style="opacity: 0.7;">Required for live scanning</small>
+            <i class="fas fa-hand-pointer" style="opacity: 0.8; font-size: 12px;"></i>
+        </div>
     `;
     
-    notification.addEventListener('click', () => {
-        // User interaction - now we can play audio
-        liveScanner.currentAudio.play()
-            .then(() => {
-                console.log('Audio enabled by user interaction');
-                updateMeikoStatus("Audio enabled", "Live scanning active");
-            })
-            .catch(err => {
-                console.error('Still failed to play after user interaction:', err);
-            });
-        
-        document.body.removeChild(notification);
+    notification.addEventListener('click', enableAudioPlayback);
+    
+    // Add close button
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    closeBtn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: none;
+        border: none;
+        color: white;
+        opacity: 0.7;
+        cursor: pointer;
+        font-size: 12px;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s ease;
+    `;
+    
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeAutoplayNotification();
     });
     
+    closeBtn.addEventListener('mouseenter', () => {
+        closeBtn.style.opacity = '1';
+        closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+    });
+    
+    closeBtn.addEventListener('mouseleave', () => {
+        closeBtn.style.opacity = '0.7';
+        closeBtn.style.background = 'none';
+    });
+    
+    notification.appendChild(closeBtn);
     document.body.appendChild(notification);
     
-    // Auto-remove after 10 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            document.body.removeChild(notification);
+    console.log('Autoplay notification shown');
+}
+
+function enableAudioPlayback() {
+    console.log('User clicked to enable audio playback');
+    
+    // Resume audio context and play current audio
+    resumeAudioContext().then(() => {
+        if (liveScanner.currentAudio) {
+            return liveScanner.currentAudio.play();
         }
-    }, 10000);
+    }).then(() => {
+        console.log('Audio enabled by user interaction');
+        updateMeikoStatus("Audio enabled", "Live scanning active");
+        liveScanner.autoplayBlocked = false;
+        liveScanner.enablePromptShown = false;
+        removeAutoplayNotification();
+    }).catch(err => {
+        console.error('Still failed to play after user interaction:', err);
+        updateMeikoStatus("Audio error", "Check browser settings");
+    });
+}
+
+function removeAutoplayNotification() {
+    const notification = document.getElementById('autoplay-notification');
+    if (notification) {
+        notification.style.animation = 'slideOutRight 0.3s ease-in';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+        }, 300);
+        console.log('Autoplay notification removed');
+    }
 }
 
 function showCurrentCallInfo(callData) {
@@ -869,22 +1398,55 @@ function addTranscriptionToFeed(callData) {
 function playCallFromFeed(callId) {
     console.log('Playing call from transcription feed:', callId);
     
-    // Create a mock call data object (in real implementation, you'd fetch this)
-    const callData = {
-        id: callId,
-        talkgroup_alias: 'Manual Playback',
-        frequency: '000.000',
-        timestamp: new Date().toISOString(),
-        duration: 10 // Default duration, real implementation would fetch this
-    };
+    // Show loading state
+    updateMeikoStatus("Loading call", `Fetching call #${callId}`);
     
-    // Stop current playback if any
-    if (liveScanner.currentAudio) {
-        liveScanner.currentAudio.pause();
-    }
-    
-    // Start playing the selected call
-    startPlayingCall(callData);
+    // Fetch the actual call data
+    fetch(`/api/calls/${callId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(callData => {
+            console.log('Fetched call data:', callData);
+            
+            // Stop current playback if any
+            if (liveScanner.currentAudio && !liveScanner.currentAudio.paused) {
+                liveScanner.currentAudio.pause();
+            }
+            
+            // Clear current call state
+            liveScanner.isPlaying = false;
+            liveScanner.currentCall = null;
+            
+            // Start playing the selected call
+            startPlayingCall(callData);
+            
+            updateMeikoStatus("Playing from feed", `Call #${callId}`);
+        })
+        .catch(error => {
+            console.error('Failed to fetch call data:', error);
+            updateMeikoStatus("Playback failed", "Could not load call data");
+            
+            // Fallback: try to play with minimal data
+            const fallbackCallData = {
+                id: callId,
+                talkgroup_alias: 'Manual Playback',
+                frequency: 'Unknown',
+                timestamp: new Date().toISOString(),
+                duration: 30,
+                transcription: 'Transcription not available'
+            };
+            
+            // Stop current playback if any
+            if (liveScanner.currentAudio && !liveScanner.currentAudio.paused) {
+                liveScanner.currentAudio.pause();
+            }
+            
+            startPlayingCall(fallbackCallData);
+        });
 }
 
 function clearTranscriptionFeed() {
@@ -903,11 +1465,304 @@ function clearTranscriptionFeed() {
     clearActiveTranscriptionHighlight();
 }
 
-// Utility function to show call details (placeholder)
+// Utility function to show call details
 function showCallDetails(callId) {
     console.log('Showing details for call:', callId);
-    // In a real implementation, this would open a modal or navigate to a details page
-    updateMeikoStatus("Call details", `Viewing details for call #${callId}`);
+    updateMeikoStatus("Loading details", `Fetching call #${callId} details`);
+    
+    // Fetch call details
+    fetch(`/api/calls/${callId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(callData => {
+            showCallDetailsModal(callData);
+            updateMeikoStatus("Call details", `Viewing call #${callId}`);
+        })
+        .catch(error => {
+            console.error('Failed to fetch call details:', error);
+            updateMeikoStatus("Details failed", "Could not load call details");
+            
+            // Show error modal
+            showErrorModal('Call Details Error', 'Could not load call details. Please try again.');
+        });
+}
+
+function showCallDetailsModal(callData) {
+    // Remove existing modal if present
+    const existingModal = document.getElementById('call-details-modal');
+    if (existingModal) {
+        document.body.removeChild(existingModal);
+    }
+    
+    const modal = document.createElement('div');
+    modal.id = 'call-details-modal';
+    modal.className = 'modal';
+    modal.style.cssText = `
+        display: block;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        animation: fadeIn 0.15s ease-out;
+    `;
+    
+    const timestamp = new Date(callData.timestamp).toLocaleString();
+    const duration = Math.floor(callData.duration || 0);
+    const minutes = Math.floor(duration / 60);
+    const seconds = duration % 60;
+    const durationText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: var(--bg-primary);
+            margin: 5% auto;
+            padding: 0;
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.2s ease-out;
+        ">
+            <div class="modal-header" style="
+                padding: 20px 24px;
+                border-bottom: 1px solid var(--border-secondary);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+            ">
+                <h3 style="
+                    margin: 0;
+                    color: var(--text-primary);
+                    font-size: 18px;
+                    font-weight: 600;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                ">
+                    <i class="fas fa-info-circle" style="color: var(--accent-blue);"></i>
+                    Call Details
+                </h3>
+                <button class="modal-close" onclick="closeCallDetailsModal()" style="
+                    background: none;
+                    border: none;
+                    color: var(--text-secondary);
+                    font-size: 18px;
+                    cursor: pointer;
+                    padding: 4px;
+                    border-radius: 4px;
+                    transition: all 0.2s ease;
+                ">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 24px;">
+                <div style="display: grid; gap: 20px;">
+                    <div class="detail-section">
+                        <h4 style="margin: 0 0 12px 0; color: var(--text-primary); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Call Information
+                        </h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div class="detail-item">
+                                <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Call ID</label>
+                                <span style="color: var(--text-primary); font-family: monospace;">#${callData.id}</span>
+                            </div>
+                            <div class="detail-item">
+                                <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Duration</label>
+                                <span style="color: var(--text-primary);">${durationText}</span>
+                            </div>
+                            <div class="detail-item">
+                                <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Frequency</label>
+                                <span style="color: var(--accent-blue); font-family: monospace;">${callData.frequency || 'Unknown'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <label style="display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Timestamp</label>
+                                <span style="color: var(--text-primary); font-size: 13px;">${timestamp}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    ${callData.talkgroup_alias ? `
+                    <div class="detail-section">
+                        <h4 style="margin: 0 0 8px 0; color: var(--text-primary); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Talkgroup
+                        </h4>
+                        <div style="
+                            background: var(--bg-secondary);
+                            padding: 12px 16px;
+                            border-radius: 6px;
+                            border-left: 3px solid var(--accent-green);
+                        ">
+                            <span style="color: var(--text-primary); font-weight: 500;">${callData.talkgroup_alias}</span>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    ${callData.transcription ? `
+                    <div class="detail-section">
+                        <h4 style="margin: 0 0 12px 0; color: var(--text-primary); font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                            Transcription
+                        </h4>
+                        <div style="
+                            background: var(--bg-secondary);
+                            padding: 16px;
+                            border-radius: 6px;
+                            border: 1px solid var(--border-secondary);
+                            line-height: 1.6;
+                            max-height: 200px;
+                            overflow-y: auto;
+                        ">
+                            <span style="color: var(--text-primary);">${callData.transcription}</span>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="detail-actions" style="
+                        display: flex;
+                        gap: 12px;
+                        padding-top: 12px;
+                        border-top: 1px solid var(--border-secondary);
+                        justify-content: flex-end;
+                    ">
+                        <button onclick="playCallFromFeed('${callData.id}')" style="
+                            background: var(--accent-blue);
+                            color: white;
+                            border: none;
+                            padding: 10px 16px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 13px;
+                            font-weight: 500;
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                            transition: all 0.2s ease;
+                        " onmouseover="this.style.background='#0099cc'" onmouseout="this.style.background='var(--accent-blue)'">
+                            <i class="fas fa-play"></i>
+                            Play Call
+                        </button>
+                        <button onclick="closeCallDetailsModal()" style="
+                            background: var(--bg-tertiary);
+                            color: var(--text-secondary);
+                            border: 1px solid var(--border-secondary);
+                            padding: 10px 16px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 13px;
+                            font-weight: 500;
+                            transition: all 0.2s ease;
+                        " onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='var(--bg-tertiary)'">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add event listeners
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeCallDetailsModal();
+        }
+    });
+    
+    // Add ESC key listener
+    const escListener = (e) => {
+        if (e.key === 'Escape') {
+            closeCallDetailsModal();
+            document.removeEventListener('keydown', escListener);
+        }
+    };
+    document.addEventListener('keydown', escListener);
+    
+    document.body.appendChild(modal);
+}
+
+function closeCallDetailsModal() {
+    const modal = document.getElementById('call-details-modal');
+    if (modal) {
+        modal.style.animation = 'fadeOut 0.15s ease-out';
+        setTimeout(() => {
+            if (modal.parentNode) {
+                document.body.removeChild(modal);
+            }
+        }, 150);
+        updateMeikoStatus("Ready for monitoring", "Live scanner controls available");
+    }
+}
+
+function showErrorModal(title, message) {
+    const modal = document.createElement('div');
+    modal.className = 'modal error-modal';
+    modal.style.cssText = `
+        display: block;
+        position: fixed;
+        z-index: 1001;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        animation: fadeIn 0.15s ease-out;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: var(--bg-primary);
+            margin: 15% auto;
+            padding: 24px;
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.2s ease-out;
+        ">
+            <div style="margin-bottom: 16px;">
+                <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #ff6b6b; margin-bottom: 16px;"></i>
+                <h3 style="margin: 0 0 8px 0; color: var(--text-primary);">${title}</h3>
+                <p style="margin: 0; color: var(--text-secondary); font-size: 14px;">${message}</p>
+            </div>
+            <button onclick="this.closest('.modal').remove()" style="
+                background: var(--accent-blue);
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+            ">
+                OK
+            </button>
+        </div>
+    `;
+    
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+    
+    document.body.appendChild(modal);
+    
+    setTimeout(() => {
+        if (modal.parentNode) {
+            modal.remove();
+        }
+    }, 5000);
 }
 
 // Enhanced audio event handlers
@@ -1115,12 +1970,14 @@ function setupKeyboardShortcuts() {
                 if (liveScanner.isActive && liveScanner.currentAudio) {
                     // If audio is playing, pause/resume it
                     if (liveScanner.currentAudio.paused) {
-                        liveScanner.currentAudio.play();
+                        resumeAudioContext().then(() => {
+                            liveScanner.currentAudio.play();
+                        });
                     } else {
                         liveScanner.currentAudio.pause();
                     }
                 } else {
-                    // Toggle scanner
+                    // Toggle scanner (will handle audio context resumption)
                     toggleLiveScanner();
                 }
                 break;
