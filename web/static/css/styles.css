@@ -1008,6 +1008,7 @@ body {
     margin-bottom: 12px;
     position: relative;
     animation: slideIn 0.3s ease-out;
+    transition: all 0.3s ease;
 }
 
 /* Call Queue Styles */
@@ -1211,4 +1212,308 @@ body {
     .call-queue-list {
         max-height: 120px;
     }
+}
+
+/* Live Transcription Interactive Features */
+.live-transcription-container {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-secondary);
+    border-top: none;
+    display: none;
+    animation: slideDown 0.3s ease-out;
+}
+
+.live-transcription-container.active {
+    display: block;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        max-height: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        max-height: 300px;
+        transform: translateY(0);
+    }
+}
+
+.live-transcription-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border-secondary);
+    background: linear-gradient(90deg, var(--bg-tertiary) 0%, rgba(0, 212, 255, 0.05) 100%);
+}
+
+.live-transcription-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.transcription-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.transcription-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.progress-bar {
+    width: 120px;
+    height: 4px;
+    background: var(--border-secondary);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+    width: 0%;
+    transition: width 0.1s linear;
+    border-radius: 2px;
+}
+
+.progress-text {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.live-transcription-text {
+    padding: 16px 20px;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text-primary);
+    background: var(--bg-card);
+}
+
+.transcription-word {
+    transition: all 0.2s ease;
+    padding: 1px 2px;
+    border-radius: 2px;
+    cursor: default;
+}
+
+.transcription-word.highlighted {
+    background: rgba(0, 212, 255, 0.15);
+    color: var(--accent-blue);
+}
+
+.transcription-word.current {
+    background: var(--accent-blue);
+    color: var(--bg-primary);
+    font-weight: 500;
+    box-shadow: 0 0 6px rgba(0, 212, 255, 0.4);
+    animation: pulse-word 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse-word {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+/* Enhanced Transcription Feed Items - Update existing styles */
+
+.transcription-item:hover {
+    border-color: var(--border-primary);
+    background: var(--bg-card);
+}
+
+.transcription-item.active-playback {
+    border-color: var(--accent-blue);
+    background: linear-gradient(90deg, var(--bg-card) 0%, rgba(0, 212, 255, 0.08) 100%);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+    position: relative;
+}
+
+.transcription-item.active-playback::before {
+    content: '';
+    position: absolute;
+    left: -1px;
+    top: -1px;
+    bottom: -1px;
+    width: 4px;
+    background: var(--accent-blue);
+    border-radius: 2px 0 0 2px;
+    animation: glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 6px var(--accent-blue); }
+    50% { box-shadow: 0 0 12px var(--accent-blue); }
+}
+
+.transcription-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.transcription-time {
+    color: var(--text-secondary);
+}
+
+.transcription-talkgroup {
+    color: var(--accent-blue);
+    font-weight: 500;
+}
+
+.transcription-duration {
+    color: var(--accent-green);
+    font-weight: 500;
+    font-size: 11px;
+}
+
+.transcription-text {
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.transcription-actions {
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.transcription-item:hover .transcription-actions,
+.transcription-item.active-playback .transcription-actions {
+    opacity: 1;
+}
+
+.transcription-action-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-secondary);
+    color: var(--text-secondary);
+    width: 24px;
+    height: 24px;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 10px;
+}
+
+.transcription-action-btn:hover {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+    transform: scale(1.1);
+}
+
+.transcription-action-btn:active {
+    transform: scale(0.95);
+}
+
+/* Responsive adjustments for enhanced features */
+@media (max-width: 768px) {
+    .live-transcription-container {
+        max-height: 200px;
+    }
+    
+    .live-transcription-text {
+        max-height: 80px;
+        padding: 12px 16px;
+        font-size: 13px;
+    }
+    
+    .transcription-controls {
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+    }
+    
+    .transcription-progress {
+        flex-direction: column;
+        gap: 6px;
+        align-items: flex-end;
+    }
+    
+    .progress-bar {
+        width: 100px;
+    }
+    
+    .progress-text {
+        font-size: 10px;
+    }
+    
+    .transcription-meta {
+        font-size: 11px;
+    }
+    
+    .transcription-actions {
+        opacity: 1; /* Always visible on mobile */
+    }
+    
+    .shortcut-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+    
+    .key {
+        min-width: auto;
+    }
+    
+    .action {
+        margin-left: 0;
+    }
+}
+
+/* Keyboard shortcuts styling */
+.shortcut-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-secondary);
+}
+
+.shortcut-item:last-child {
+    border-bottom: none;
+}
+
+.key {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    min-width: 80px;
+    text-align: center;
+}
+
+.action {
+    color: var(--text-secondary);
+    font-size: 12px;
+    flex: 1;
+    margin-left: 12px;
 } 

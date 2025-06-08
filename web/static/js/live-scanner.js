@@ -10,7 +10,12 @@ let liveScanner = {
     volume: 0.75,
     callQueue: [],
     isPlaying: false,
-    currentCall: null
+    currentCall: null,
+    // Enhanced transcription state
+    currentTranscriptionElement: null,
+    transcriptionHighlightInterval: null,
+    currentWordIndex: 0,
+    transcriptionWords: []
 };
 
 // Initialize Live Scanner
@@ -37,6 +42,9 @@ function initLiveScanner() {
     
     // Initialize waveform
     drawStandbyWaveform();
+    
+    // Set up keyboard shortcuts
+    setupKeyboardShortcuts();
 }
 
 function resizeWaveformCanvas() {
@@ -403,6 +411,9 @@ function startPlayingCall(callData) {
         console.log('Audio paused');
     });
     
+    // Add enhanced event handlers for transcription features
+    enhanceAudioEventHandlers(liveScanner.currentAudio, callData);
+    
     // Attempt to play the audio
     console.log('Attempting to play audio...');
     const playPromise = liveScanner.currentAudio.play();
@@ -576,11 +587,219 @@ function showCurrentCallInfo(callData) {
     duration.textContent = `${callData.duration}s`;
     
     currentCallInfo.classList.add('active');
+    
+    // Add live transcription display
+    showLiveTranscription(callData);
+    
+    // Highlight the corresponding transcription in the feed
+    highlightActiveTranscriptionInFeed(callData.id);
 }
 
 function hideCurrentCallInfo() {
     const currentCallInfo = document.getElementById('current-call-info');
     currentCallInfo.classList.remove('active');
+    
+    // Hide live transcription and stop highlighting
+    hideLiveTranscription();
+    
+    // Remove active highlighting from feed
+    clearActiveTranscriptionHighlight();
+}
+
+function showLiveTranscription(callData) {
+    if (!callData.transcription) return;
+    
+    // Create or update the live transcription container
+    let liveTranscriptionContainer = document.getElementById('live-transcription-container');
+    if (!liveTranscriptionContainer) {
+        liveTranscriptionContainer = document.createElement('div');
+        liveTranscriptionContainer.id = 'live-transcription-container';
+        liveTranscriptionContainer.className = 'live-transcription-container';
+        
+        // Insert after current call info
+        const currentCallInfo = document.getElementById('current-call-info');
+        currentCallInfo.parentNode.insertBefore(liveTranscriptionContainer, currentCallInfo.nextSibling);
+    }
+    
+    liveTranscriptionContainer.innerHTML = `
+        <div class="live-transcription-header">
+            <div class="live-transcription-title">
+                <i class="fas fa-waveform-lines"></i>
+                Live Transcription
+            </div>
+            <div class="transcription-controls">
+                <div class="transcription-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="transcription-progress-fill"></div>
+                    </div>
+                    <span class="progress-text" id="transcription-progress-text">0:00 / ${callData.duration}:00</span>
+                </div>
+                <button class="btn-small" onclick="skipCurrentCall()" title="Skip to next call">
+                    <i class="fas fa-forward"></i>
+                </button>
+            </div>
+        </div>
+        <div class="live-transcription-text" id="live-transcription-text">
+            ${formatTranscriptionForHighlighting(callData.transcription)}
+        </div>
+    `;
+    
+    liveTranscriptionContainer.classList.add('active');
+    
+    // Start word-by-word highlighting simulation
+    startTranscriptionHighlighting(callData);
+}
+
+function hideLiveTranscription() {
+    const container = document.getElementById('live-transcription-container');
+    if (container) {
+        container.classList.remove('active');
+    }
+    
+    // Stop highlighting animation
+    stopTranscriptionHighlighting();
+}
+
+function formatTranscriptionForHighlighting(transcription) {
+    // Split transcription into words and wrap each in a span for highlighting
+    const words = transcription.split(/(\s+|[.,!?;:])/);
+    liveScanner.transcriptionWords = words.filter(word => word.trim().length > 0);
+    
+    return words.map((word, index) => {
+        if (word.trim().length === 0) {
+            return word; // Preserve whitespace
+        }
+        return `<span class="transcription-word" data-word-index="${index}">${word}</span>`;
+    }).join('');
+}
+
+function startTranscriptionHighlighting(callData) {
+    if (!liveScanner.currentAudio) return;
+    
+    liveScanner.currentWordIndex = 0;
+    const totalDuration = callData.duration * 1000; // Convert to milliseconds
+    const totalWords = liveScanner.transcriptionWords.length;
+    const wordsPerSecond = totalWords / callData.duration;
+    
+    // Clear any existing interval
+    stopTranscriptionHighlighting();
+    
+    // Start highlighting animation
+    liveScanner.transcriptionHighlightInterval = setInterval(() => {
+        if (!liveScanner.currentAudio || liveScanner.currentAudio.paused) {
+            return;
+        }
+        
+        const currentTime = liveScanner.currentAudio.currentTime;
+        const progressPercent = (currentTime / callData.duration) * 100;
+        
+        // Update progress bar
+        updateTranscriptionProgress(currentTime, callData.duration, progressPercent);
+        
+        // Calculate which words should be highlighted based on audio progress
+        const expectedWordIndex = Math.floor(currentTime * wordsPerSecond);
+        
+        // Highlight words up to the current position
+        highlightWordsUpTo(expectedWordIndex);
+        
+        // Auto-scroll if needed
+        scrollToCurrentWord();
+        
+    }, 100); // Update every 100ms for smooth animation
+}
+
+function stopTranscriptionHighlighting() {
+    if (liveScanner.transcriptionHighlightInterval) {
+        clearInterval(liveScanner.transcriptionHighlightInterval);
+        liveScanner.transcriptionHighlightInterval = null;
+    }
+    
+    // Clear all highlighting
+    const words = document.querySelectorAll('.transcription-word');
+    words.forEach(word => {
+        word.classList.remove('highlighted', 'current');
+    });
+    
+    liveScanner.currentWordIndex = 0;
+}
+
+function highlightWordsUpTo(wordIndex) {
+    const words = document.querySelectorAll('.transcription-word');
+    
+    words.forEach((word, index) => {
+        if (index < wordIndex) {
+            word.classList.add('highlighted');
+            word.classList.remove('current');
+        } else if (index === wordIndex) {
+            word.classList.add('current');
+            word.classList.remove('highlighted');
+        } else {
+            word.classList.remove('highlighted', 'current');
+        }
+    });
+}
+
+function updateTranscriptionProgress(currentTime, totalDuration, progressPercent) {
+    const progressFill = document.getElementById('transcription-progress-fill');
+    const progressText = document.getElementById('transcription-progress-text');
+    
+    if (progressFill) {
+        progressFill.style.width = `${Math.min(progressPercent, 100)}%`;
+    }
+    
+    if (progressText) {
+        const currentMin = Math.floor(currentTime / 60);
+        const currentSec = Math.floor(currentTime % 60);
+        const totalMin = Math.floor(totalDuration / 60);
+        const totalSec = Math.floor(totalDuration % 60);
+        
+        progressText.textContent = `${currentMin}:${currentSec.toString().padStart(2, '0')} / ${totalMin}:${totalSec.toString().padStart(2, '0')}`;
+    }
+}
+
+function scrollToCurrentWord() {
+    const currentWord = document.querySelector('.transcription-word.current');
+    const container = document.getElementById('live-transcription-text');
+    
+    if (currentWord && container) {
+        const containerRect = container.getBoundingClientRect();
+        const wordRect = currentWord.getBoundingClientRect();
+        
+        // Check if the current word is out of view
+        if (wordRect.bottom > containerRect.bottom || wordRect.top < containerRect.top) {
+            currentWord.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        }
+    }
+}
+
+function highlightActiveTranscriptionInFeed(callId) {
+    // Remove any existing active highlighting
+    clearActiveTranscriptionHighlight();
+    
+    // Find and highlight the transcription item for the current call
+    const transcriptionItems = document.querySelectorAll('.transcription-item');
+    transcriptionItems.forEach(item => {
+        // We'll need to store the call ID in the transcription item
+        if (item.dataset.callId === callId.toString()) {
+            item.classList.add('active-playback');
+            
+            // Scroll the item into view in the feed
+            item.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+        }
+    });
+}
+
+function clearActiveTranscriptionHighlight() {
+    const activeItems = document.querySelectorAll('.transcription-item.active-playback');
+    activeItems.forEach(item => {
+        item.classList.remove('active-playback');
+    });
 }
 
 function addTranscriptionToFeed(callData) {
@@ -597,6 +816,7 @@ function addTranscriptionToFeed(callData) {
     // Create transcription item
     const item = document.createElement('div');
     item.className = 'transcription-item new';
+    item.dataset.callId = callData.id; // Store call ID for highlighting
     
     const timestamp = new Date(callData.timestamp).toLocaleTimeString('en-US', {
         hour: '2-digit',
@@ -609,8 +829,17 @@ function addTranscriptionToFeed(callData) {
         <div class="transcription-meta">
             <span class="transcription-time">${timestamp}</span>
             <span class="transcription-talkgroup">${callData.talkgroup_alias || 'Unknown'}</span>
+            <span class="transcription-duration">${callData.duration}s</span>
         </div>
         <div class="transcription-text">${callData.transcription}</div>
+        <div class="transcription-actions">
+            <button class="transcription-action-btn" onclick="playCallFromFeed('${callData.id}')" title="Play this call">
+                <i class="fas fa-play"></i>
+            </button>
+            <button class="transcription-action-btn" onclick="showCallDetails('${callData.id}')" title="View details">
+                <i class="fas fa-info-circle"></i>
+            </button>
+        </div>
     `;
     
     // Add to top of feed
@@ -630,8 +859,32 @@ function addTranscriptionToFeed(callData) {
         }
     }
     
-    // Auto-scroll to top
-    feed.scrollTop = 0;
+    // Auto-scroll to top only if not currently playing something
+    if (!liveScanner.isPlaying) {
+        feed.scrollTop = 0;
+    }
+}
+
+// New function to play a call directly from the transcription feed
+function playCallFromFeed(callId) {
+    console.log('Playing call from transcription feed:', callId);
+    
+    // Create a mock call data object (in real implementation, you'd fetch this)
+    const callData = {
+        id: callId,
+        talkgroup_alias: 'Manual Playback',
+        frequency: '000.000',
+        timestamp: new Date().toISOString(),
+        duration: 10 // Default duration, real implementation would fetch this
+    };
+    
+    // Stop current playback if any
+    if (liveScanner.currentAudio) {
+        liveScanner.currentAudio.pause();
+    }
+    
+    // Start playing the selected call
+    startPlayingCall(callData);
 }
 
 function clearTranscriptionFeed() {
@@ -644,6 +897,46 @@ function clearTranscriptionFeed() {
         </div>
     `;
     liveScanner.transcriptionItems = [];
+    
+    // Also clear any live transcription display
+    hideLiveTranscription();
+    clearActiveTranscriptionHighlight();
+}
+
+// Utility function to show call details (placeholder)
+function showCallDetails(callId) {
+    console.log('Showing details for call:', callId);
+    // In a real implementation, this would open a modal or navigate to a details page
+    updateMeikoStatus("Call details", `Viewing details for call #${callId}`);
+}
+
+// Enhanced audio event handlers
+function enhanceAudioEventHandlers(audio, callData) {
+    // Add time update handler for transcription highlighting
+    audio.addEventListener('timeupdate', () => {
+        if (liveScanner.transcriptionHighlightInterval) {
+            // The highlighting is already handled by the interval
+            // This is just for any additional time-based features
+        }
+    });
+    
+    // Handle seeking (if user could scrub through audio)
+    audio.addEventListener('seeked', () => {
+        if (callData && liveScanner.transcriptionHighlightInterval) {
+            // Restart highlighting from the new position
+            stopTranscriptionHighlighting();
+            startTranscriptionHighlighting(callData);
+        }
+    });
+    
+    // Handle pause/play for highlighting
+    audio.addEventListener('pause', () => {
+        console.log('Audio paused, pausing transcription highlighting');
+    });
+    
+    audio.addEventListener('play', () => {
+        console.log('Audio resumed, resuming transcription highlighting');
+    });
 }
 
 function testAudioPlayback() {
@@ -803,4 +1096,90 @@ function updateScannerStatus(statusData) {
         status.className = 'scanner-indicator standby';
         status.querySelector('span').textContent = 'STANDBY';
     }
+}
+
+// Add keyboard shortcuts for live scanner
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        // Only handle shortcuts when live scanner tab is active
+        if (currentTab !== 'live-scanner') return;
+        
+        // Prevent default for our handled keys
+        const handledKeys = ['Space', 'ArrowRight', 'ArrowLeft', 'Escape', 'KeyS'];
+        if (handledKeys.includes(e.code)) {
+            e.preventDefault();
+        }
+        
+        switch(e.code) {
+            case 'Space': // Spacebar - toggle scanner or pause/resume current audio
+                if (liveScanner.isActive && liveScanner.currentAudio) {
+                    // If audio is playing, pause/resume it
+                    if (liveScanner.currentAudio.paused) {
+                        liveScanner.currentAudio.play();
+                    } else {
+                        liveScanner.currentAudio.pause();
+                    }
+                } else {
+                    // Toggle scanner
+                    toggleLiveScanner();
+                }
+                break;
+                
+            case 'ArrowRight': // Right arrow - skip current call
+                if (liveScanner.isPlaying) {
+                    skipCurrentCall();
+                }
+                break;
+                
+            case 'ArrowLeft': // Left arrow - restart current call
+                if (liveScanner.currentAudio) {
+                    liveScanner.currentAudio.currentTime = 0;
+                }
+                break;
+                
+            case 'Escape': // Escape - stop scanner
+                if (liveScanner.isActive) {
+                    stopLiveScanner();
+                }
+                break;
+                
+            case 'KeyS': // S - toggle scanner
+                toggleLiveScanner();
+                break;
+                
+            case 'KeyC': // C - clear transcription feed
+                if (e.shiftKey) {
+                    clearTranscriptionFeed();
+                }
+                break;
+                
+            case 'KeyT': // T - test audio
+                if (e.shiftKey) {
+                    testAudioPlayback();
+                }
+                break;
+        }
+    });
+}
+
+// Show keyboard shortcuts help
+function showKeyboardShortcuts() {
+    const shortcuts = [
+        { key: 'SPACEBAR', action: 'Play/Pause Audio or Toggle Scanner' },
+        { key: '→', action: 'Skip Current Call' },
+        { key: '←', action: 'Restart Current Call' },
+        { key: 'ESC', action: 'Stop Scanner' },
+        { key: 'S', action: 'Toggle Scanner' },
+        { key: 'SHIFT + C', action: 'Clear Transcription Feed' },
+        { key: 'SHIFT + T', action: 'Test Audio' }
+    ];
+    
+    const shortcutsHtml = shortcuts.map(s => 
+        `<div class="shortcut-item">
+            <kbd class="key">${s.key}</kbd>
+            <span class="action">${s.action}</span>
+        </div>`
+    ).join('');
+    
+    updateMeikoStatus("Keyboard Shortcuts", shortcutsHtml);
 } 
