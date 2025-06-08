@@ -106,21 +106,21 @@ func (l *Logger) Debug(component string, message string, args ...interface{}) {
 // Info logs an info message
 func (l *Logger) Info(message string, args ...interface{}) {
 	if l.level <= INFO {
-		l.log(INFO, "INFO", message, args...)
+		l.log(INFO, "SYSTEM", message, args...)
 	}
 }
 
 // Warn logs a warning message
 func (l *Logger) Warn(message string, args ...interface{}) {
 	if l.level <= WARN {
-		l.log(WARN, "WARN", message, args...)
+		l.log(WARN, "SYSTEM", message, args...)
 	}
 }
 
 // Error logs an error message
 func (l *Logger) Error(message string, args ...interface{}) {
 	if l.level <= ERROR {
-		l.log(ERROR, "ERROR", message, args...)
+		l.log(ERROR, "SYSTEM", message, args...)
 	}
 }
 
@@ -209,13 +209,13 @@ func (l *Logger) log(level LogLevel, component, message string, args ...interfac
 		}
 		fmt.Println(coloredEntry)
 	} else {
-		logEntry = l.buildPlainEntry(timestamp, levelToString(level), component, formattedMessage)
+		logEntry = l.buildPlainEntry(timestamp, "["+levelToString(level)+"]", component, formattedMessage)
 		fmt.Println(logEntry)
 	}
 
 	// Also log to file if configured
 	if l.fileLogger != nil {
-		plainEntry := l.buildPlainEntry(timestamp, levelToString(level), component, formattedMessage)
+		plainEntry := l.buildPlainEntry(timestamp, "["+levelToString(level)+"]", component, formattedMessage)
 		l.fileLogger.Println(plainEntry)
 	}
 }
@@ -237,8 +237,20 @@ func (l *Logger) logSuccess(component, message string, args ...interface{}) {
 		}
 	}
 
-	// Add to buffer as INFO level
-	l.addToBuffer(INFO, component, formattedMessage)
+	// Add to buffer as SUCCESS level (using INFO level enum but SUCCESS string)
+	entry := LogEntry{
+		Timestamp: time.Now(),
+		Level:     "SUCCESS",
+		Component: component,
+		Message:   formattedMessage,
+	}
+
+	l.bufferMu.Lock()
+	l.buffer = append(l.buffer, entry)
+	if len(l.buffer) > l.maxBuffer {
+		l.buffer = l.buffer[len(l.buffer)-l.maxBuffer:]
+	}
+	l.bufferMu.Unlock()
 
 	var logEntry string
 	var coloredEntry string
@@ -300,15 +312,15 @@ func (l *Logger) buildPlainEntry(timestamp, levelStr, component, message string)
 func levelToString(level LogLevel) string {
 	switch level {
 	case DEBUG:
-		return "[DEBUG]"
+		return "DEBUG"
 	case INFO:
-		return "[INFO]"
+		return "INFO"
 	case WARN:
-		return "[WARN]"
+		return "WARN"
 	case ERROR:
-		return "[ERROR]"
+		return "ERROR"
 	default:
-		return "[INFO]"
+		return "INFO"
 	}
 }
 

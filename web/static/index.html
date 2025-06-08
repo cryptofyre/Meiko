@@ -1486,12 +1486,14 @@
                                 hour12: true
                             });
                             const levelColor = getLevelColor(log.level);
+                            // Clean message of any existing level indicators to prevent duplication
+                            const cleanMessage = cleanLogMessage(log.message, log.level);
                             return `
                                 <div style="margin-bottom: 8px; font-family: var(--font-mono); font-size: 12px;">
                                     <span style="color: var(--text-muted);">[${timestamp}]</span>
                                     <span style="color: ${levelColor}; font-weight: 500;">[${log.level}]</span>
                                     <span style="color: var(--text-secondary);">[${log.component}]</span>
-                                    <span style="color: var(--text-primary);">${log.message}</span>
+                                    <span style="color: var(--text-primary);">${cleanMessage}</span>
                                 </div>
                             `;
                         }).join('');
@@ -1713,6 +1715,35 @@
                 case 'SUCCESS': return '#4caf50';
                 default: return 'var(--text-secondary)';
             }
+        }
+
+        // Helper function to clean log messages of duplicate level indicators
+        function cleanLogMessage(message, logLevel) {
+            if (!message) return message;
+            
+            let cleaned = message;
+            
+            // Remove level indicators that match the current log level at the start of message
+            const levelPattern = new RegExp(`^\\s*\\[${logLevel}\\]\\s*`, 'i');
+            cleaned = cleaned.replace(levelPattern, '');
+            
+            // Remove any duplicate level brackets like [[INFO]] at start
+            const doubleLevelPattern = new RegExp(`^\\s*\\[\\[${logLevel}\\]\\]\\s*`, 'i');
+            cleaned = cleaned.replace(doubleLevelPattern, '');
+            
+            // Remove generic level patterns at start of message (any level)
+            const genericLevelPattern = /^\s*\[(INFO|WARN|ERROR|DEBUG|SUCCESS)\]\s*/i;
+            cleaned = cleaned.replace(genericLevelPattern, '');
+            
+            // Remove double brackets patterns like [[LEVEL]]
+            const doubleGenericPattern = /^\s*\[\[(INFO|WARN|ERROR|DEBUG|SUCCESS)\]\]\s*/i;
+            cleaned = cleaned.replace(doubleGenericPattern, '');
+            
+            // Remove multiple consecutive level indicators
+            const multipleLevelPattern = /(\[(INFO|WARN|ERROR|DEBUG|SUCCESS)\]\s*){2,}/gi;
+            cleaned = cleaned.replace(multipleLevelPattern, '');
+            
+            return cleaned.trim();
         }
 
         function closeCallModal() {
