@@ -120,15 +120,20 @@ func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor,
 		AppName:                   "Meiko Web Dashboard",
 		ReadTimeout:               30 * time.Second,
 		WriteTimeout:              30 * time.Second,
-		Prefork:                   true,        // Enable pre-forking for better performance
-		CaseSensitive:             false,       // URLs are case-insensitive
-		StrictRouting:             false,       // Trailing slashes are ignored
-		DisableKeepalive:          false,       // Keep connections alive for better performance
-		DisableDefaultDate:        false,       // Include Date header
-		DisableDefaultContentType: false,       // Include Content-Type header
-		DisableHeaderNormalizing:  false,       // Normalize headers
-		ServerHeader:              "Meiko",     // Custom server header
-		CompressedFileSuffix:      ".meiko.gz", // Custom compressed file suffix
+		IdleTimeout:               60 * time.Second, // Close idle connections
+		Prefork:                   false,            // Disabled: Causes multiple SDRTrunk instances
+		CaseSensitive:             false,            // URLs are case-insensitive
+		StrictRouting:             false,            // Trailing slashes are ignored
+		DisableKeepalive:          false,            // Keep connections alive for better performance
+		DisableDefaultDate:        false,            // Include Date header
+		DisableDefaultContentType: false,            // Include Content-Type header
+		DisableHeaderNormalizing:  false,            // Normalize headers
+		ServerHeader:              "Meiko",          // Custom server header
+		CompressedFileSuffix:      ".meiko.gz",      // Custom compressed file suffix
+		ReduceMemoryUsage:         true,             // Optimize memory usage
+		Concurrency:               256 * 1024,       // Max concurrent connections
+		BodyLimit:                 4 * 1024 * 1024,  // 4MB body limit
+		EnableTrustedProxyCheck:   false,            // Skip proxy checks for performance
 	})
 
 	// Add middleware

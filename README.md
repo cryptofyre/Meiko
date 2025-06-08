@@ -24,20 +24,28 @@
 
 ## 🚀 Performance Features
 
-### Pre-forking Web Server
-Meiko uses Fiber's pre-forking feature to spawn multiple worker processes that handle web requests independently. This significantly improves performance and request handling capacity on multi-core systems.
+### Optimized Single-Process Architecture
+Meiko uses a single-process architecture optimized for SDR monitoring workloads. While pre-forking could improve web performance, it conflicts with SDRTrunk's single-instance requirement.
 
-**Benefits:**
-- Better CPU utilization across multiple cores
-- Improved request throughput and response times
-- Enhanced stability under high load
-- Automatic load balancing between worker processes
+**Why Single-Process:**
+- **SDRTrunk Compatibility** - Prevents multiple SDRTrunk instances competing for audio hardware
+- **Resource Efficiency** - Avoids duplicate file watchers and database connections
+- **Deterministic Behavior** - Ensures consistent audio processing and transcription
+- **Simplified Debugging** - Single process makes troubleshooting easier
 
-**How it works:**
-- When starting the web server, Fiber automatically creates multiple child processes
-- Each process handles incoming HTTP requests independently
-- The OS kernel automatically distributes connections between processes
-- No additional configuration required - it works automatically
+**Performance Optimizations:**
+- Memory usage reduction enabled
+- Optimized connection handling (256K max concurrent)
+- Smart idle timeout management (60s)
+- Keep-alive connections for faster response times
+- Efficient static file serving with compression
+
+**Future Scaling Options:**
+- **Reverse Proxy** - Use nginx/Apache for static file serving and load balancing
+- **CDN Integration** - Serve static assets from content delivery networks  
+- **Database Optimization** - Connection pooling and query optimization
+- **Caching Layer** - Redis/Memcached for frequently accessed data
+- **Microservices** - Separate web dashboard from SDR processing if needed
 
 ## Installation
 
