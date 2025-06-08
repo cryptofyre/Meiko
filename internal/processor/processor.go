@@ -193,7 +193,7 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 	// Extract timestamp from first part if present (YYYYMMDD_HHMMSS format)
 	if len(parts) >= 2 && len(parts[0]) == 8 && len(parts[1]) >= 6 {
 		dateStr := parts[0] + parts[1][:6] // YYYYMMDDHHMMSS
-		if timestamp, err := time.Parse("20060102150405", dateStr); err == nil {
+		if timestamp, err := time.ParseInLocation("20060102150405", dateStr, time.Local); err == nil {
 			record.Timestamp = timestamp
 		}
 	}

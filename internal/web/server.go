@@ -344,12 +344,23 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 	}
 
 	// Add system events (you can expand this based on your logging/event system)
-	if start.Before(time.Now()) && end.After(time.Now().Add(-24*time.Hour)) {
-		// Add a system startup event if within the last 24 hours
+	systemInfo := s.monitor.GetSystemInfo()
+	var startupTime time.Time
+
+	// Get the actual startup time from monitor uptime
+	if uptime, ok := systemInfo["uptime"].(float64); ok {
+		startupTime = time.Now().Add(-time.Duration(uptime) * time.Second)
+	} else {
+		// Fallback to a reasonable time
+		startupTime = time.Now().Add(-30 * time.Minute)
+	}
+
+	// Only add system startup event if it falls within the requested time range
+	if (start == nil || startupTime.After(*start)) && (end == nil || startupTime.Before(*end)) {
 		events = append(events, TimelineEvent{
 			ID:          "system_start",
 			Type:        "system",
-			Timestamp:   time.Now().Add(-1 * time.Hour), // Placeholder timestamp
+			Timestamp:   startupTime,
 			Title:       "Meiko System Started",
 			Description: "SDR monitoring and transcription system came online",
 			Icon:        "power-off",

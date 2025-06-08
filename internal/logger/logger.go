@@ -175,7 +175,7 @@ func (l *Logger) GetRecentLogs(limit int) []LogEntry {
 func (l *Logger) log(level LogLevel, component, message string, args ...interface{}) {
 	timestamp := ""
 	if l.timestamps {
-		timestamp = time.Now().Format("15:04:05")
+		timestamp = time.Now().Format("03:04:05 PM")
 	}
 
 	// Format the message
@@ -224,7 +224,7 @@ func (l *Logger) log(level LogLevel, component, message string, args ...interfac
 func (l *Logger) logSuccess(component, message string, args ...interface{}) {
 	timestamp := ""
 	if l.timestamps {
-		timestamp = time.Now().Format("15:04:05")
+		timestamp = time.Now().Format("03:04:05 PM")
 	}
 
 	// Format the message
@@ -378,7 +378,7 @@ func (s *SpinnerLogger) Stop() {
 // getTimestamp returns a formatted timestamp if enabled
 func (l *Logger) getTimestamp() string {
 	if l.timestamps {
-		return Gray + time.Now().Format("15:04:05") + Reset
+		return Gray + time.Now().Format("03:04:05 PM") + Reset
 	}
 	return ""
 }
