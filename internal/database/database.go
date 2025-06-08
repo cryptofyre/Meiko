@@ -37,6 +37,18 @@ type CallRecord struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+// HourSummary represents an AI-generated summary for a specific hour
+type HourSummary struct {
+	ID          int       `json:"id"`
+	Date        string    `json:"date"`       // YYYY-MM-DD
+	Hour        int       `json:"hour"`       // 0-23
+	Summary     string    `json:"summary"`    // AI generated summary text
+	CallCount   int       `json:"call_count"` // Number of calls summarized
+	Categories  string    `json:"categories"` // JSON array of categories
+	GeneratedAt time.Time `json:"generated_at"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 // New creates a new database connection
 func New(config config.DatabaseConfig, logger *logger.Logger) (*Database, error) {
 	// Ensure database directory exists
@@ -101,6 +113,23 @@ func (d *Database) initSchema() error {
 		BEGIN
 			UPDATE calls SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 		END;
+
+	-- Hour summaries table for permanent AI summary storage
+	CREATE TABLE IF NOT EXISTS hour_summaries (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		date TEXT NOT NULL,
+		hour INTEGER NOT NULL,
+		summary TEXT NOT NULL,
+		call_count INTEGER NOT NULL,
+		categories TEXT, -- JSON array of categories
+		generated_at DATETIME NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(date, hour)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_hour_summaries_date ON hour_summaries(date);
+	CREATE INDEX IF NOT EXISTS idx_hour_summaries_date_hour ON hour_summaries(date, hour);
+	CREATE INDEX IF NOT EXISTS idx_hour_summaries_generated_at ON hour_summaries(generated_at);
 	`
 
 	if _, err := d.db.Exec(schema); err != nil {
@@ -597,4 +626,108 @@ func (d *Database) FileExists(filepath string) (bool, error) {
 		return false, fmt.Errorf("failed to check file existence: %w", err)
 	}
 	return count > 0, nil
+}
+
+// Hour Summary Management Functions
+
+// GetHourSummary returns an existing hour summary if it exists
+func (d *Database) GetHourSummary(date string, hour int) (*HourSummary, error) {
+	query := `
+		SELECT id, date, hour, summary, call_count, categories, generated_at, created_at
+		FROM hour_summaries 
+		WHERE date = ? AND hour = ?
+	`
+
+	summary := &HourSummary{}
+	err := d.db.QueryRow(query, date, hour).Scan(
+		&summary.ID, &summary.Date, &summary.Hour, &summary.Summary,
+		&summary.CallCount, &summary.Categories, &summary.GeneratedAt, &summary.CreatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // No summary exists yet
+		}
+		return nil, fmt.Errorf("failed to get hour summary: %w", err)
+	}
+
+	return summary, nil
+}
+
+// InsertHourSummary creates a new hour summary
+func (d *Database) InsertHourSummary(summary *HourSummary) error {
+	query := `
+		INSERT INTO hour_summaries (date, hour, summary, call_count, categories, generated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`
+
+	result, err := d.db.Exec(query,
+		summary.Date, summary.Hour, summary.Summary, summary.CallCount,
+		summary.Categories, summary.GeneratedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to insert hour summary: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert ID: %w", err)
+	}
+
+	summary.ID = int(id)
+	d.logger.Debug("Database", "Inserted hour summary", "id", id, "date", summary.Date, "hour", summary.Hour)
+	return nil
+}
+
+// GetHourSummariesForDate returns all hour summaries for a specific date
+func (d *Database) GetHourSummariesForDate(date string) ([]*HourSummary, error) {
+	query := `
+		SELECT id, date, hour, summary, call_count, categories, generated_at, created_at
+		FROM hour_summaries 
+		WHERE date = ?
+		ORDER BY hour ASC
+	`
+
+	rows, err := d.db.Query(query, date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query hour summaries: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []*HourSummary
+	for rows.Next() {
+		summary := &HourSummary{}
+		err := rows.Scan(
+			&summary.ID, &summary.Date, &summary.Hour, &summary.Summary,
+			&summary.CallCount, &summary.Categories, &summary.GeneratedAt, &summary.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan hour summary: %w", err)
+		}
+		summaries = append(summaries, summary)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return summaries, nil
+}
+
+// DeleteOldHourSummaries deletes hour summaries older than specified days
+func (d *Database) DeleteOldHourSummaries(daysOld int) (int, error) {
+	cutoff := time.Now().AddDate(0, 0, -daysOld).Format("2006-01-02")
+
+	result, err := d.db.Exec("DELETE FROM hour_summaries WHERE date < ?", cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old hour summaries: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
+	d.logger.Debug("Database", "Deleted old hour summaries", "count", rows, "cutoff", cutoff)
+	return int(rows), nil
 }

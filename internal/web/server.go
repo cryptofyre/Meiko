@@ -56,10 +56,6 @@ type Server struct {
 	talkgroupCache   map[string]*TalkgroupCacheEntry
 	talkgroupCacheMu sync.RWMutex
 
-	// AI Summary caching
-	aiSummaryCache   map[string]*AISummaryCacheEntry
-	aiSummaryCacheMu sync.RWMutex
-
 	// Rate limiting for AI API calls
 	lastAICall     time.Time
 	aiCallMu       sync.Mutex
@@ -145,14 +141,6 @@ type TimeRange struct {
 	End   time.Time
 }
 
-// AISummaryCacheEntry represents a cached AI summary
-type AISummaryCacheEntry struct {
-	Summary   string    `json:"summary"`
-	CachedAt  time.Time `json:"cached_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CallCount int       `json:"call_count"`
-}
-
 // New creates a new web server instance
 func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor, talkgroups *talkgroups.Service, logger *meikoLogger.Logger) (*Server, error) {
 	server := &Server{
@@ -165,7 +153,6 @@ func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor,
 		broadcast:      make(chan []byte),
 		timelineCache:  make(map[string]*TimelineCacheEntry),
 		talkgroupCache: make(map[string]*TalkgroupCacheEntry),
-		aiSummaryCache: make(map[string]*AISummaryCacheEntry),
 	}
 
 	// Initialize Fiber app
@@ -219,6 +206,9 @@ func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor,
 
 	// Start cache cleanup routine
 	go server.cacheCleanupRoutine()
+
+	// Start hour summary generation routine
+	go server.hourSummaryRoutine()
 
 	return server, nil
 }
@@ -1107,6 +1097,75 @@ func (s *Server) autoSummaryRoutine() {
 	}
 }
 
+// hourSummaryRoutine automatically generates summaries for recently completed hours
+func (s *Server) hourSummaryRoutine() {
+	ticker := time.NewTicker(15 * time.Minute) // Check every 15 minutes
+	defer ticker.Stop()
+
+	// Start checking after 5 minutes
+	time.Sleep(5 * time.Minute)
+
+	for {
+		select {
+		case <-ticker.C:
+			s.generateMissingHourSummaries()
+		}
+	}
+}
+
+// generateMissingHourSummaries checks for recently completed hours and generates summaries if needed
+func (s *Server) generateMissingHourSummaries() {
+	now := time.Now()
+
+	// Check the last 48 hours for missing summaries
+	for i := 1; i <= 48; i++ {
+		targetTime := now.Add(-time.Duration(i) * time.Hour)
+		dateStr := targetTime.Format("2006-01-02")
+		hour := targetTime.Hour()
+
+		// Skip current hour - it's not complete yet
+		if i == 0 {
+			continue
+		}
+
+		// Check if summary already exists
+		existingSummary, err := s.db.GetHourSummary(dateStr, hour)
+		if err != nil {
+			s.logger.Error("Failed to check for existing hour summary", "error", err, "date", dateStr, "hour", hour)
+			continue
+		}
+
+		if existingSummary != nil {
+			// Summary already exists, skip
+			continue
+		}
+
+		// Check if there are calls for this hour
+		hourStart := time.Date(targetTime.Year(), targetTime.Month(), targetTime.Day(), hour, 0, 0, 0, targetTime.Location())
+		hourEnd := hourStart.Add(time.Hour)
+
+		calls, err := s.db.GetCallRecords(&hourStart, &hourEnd, "", 50, 0)
+		if err != nil {
+			s.logger.Error("Failed to get calls for hour summary generation", "error", err, "date", dateStr, "hour", hour)
+			continue
+		}
+
+		// Only generate if we have enough activity
+		if len(calls) >= 3 {
+			s.logger.Info("Generating missing hour summary", "date", dateStr, "hour", hour, "call_count", len(calls))
+
+			// Generate the summary (this will store it in the database)
+			summary := s.generateHourSummary(calls, targetTime, hour)
+			if summary != "" {
+				s.logger.Info("Successfully generated missing hour summary", "date", dateStr, "hour", hour)
+			}
+
+			// Rate limit - don't generate too many at once
+			time.Sleep(5 * time.Second)
+		}
+	}
+}
+
 // getLiveStream provides real-time audio streaming status
 func (s *Server) getLiveStream(c *fiber.Ctx) error {
 	// Get recent calls for live streaming
@@ -1233,9 +1292,23 @@ func (s *Server) generateAutoSummary() {
 		return
 	}
 
-	// Generate summary using cached AI system
-	cacheKey := fmt.Sprintf("auto_summary_%s", today.Format("2006-01-02"))
-	summaryText := s.getCachedAISummary(cacheKey, calls, "Provide a concise daily summary of radio communication activity")
+	// For auto-summary, use database-backed hour summaries
+	dateStr := today.Format("2006-01-02")
+
+	// Check if we already have a good sampling of summaries for today
+	existingSummaries, _ := s.db.GetHourSummariesForDate(dateStr)
+
+	var summaryText string
+	if len(existingSummaries) > 0 {
+		// Use existing summaries as a basis for the auto-summary
+		summaryText = fmt.Sprintf("Daily activity summary: %d hours with significant activity analyzed. ", len(existingSummaries))
+		if len(existingSummaries) > 0 {
+			summaryText += "Recent activity: " + existingSummaries[len(existingSummaries)-1].Summary
+		}
+	} else {
+		// Generate a basic summary without expensive AI call for auto-summary
+		summaryText = fmt.Sprintf("Today: %d total calls recorded. Activity ongoing.", len(calls))
+	}
 
 	if summaryText == "" {
 		log.Printf("Failed to generate auto summary")
@@ -1298,34 +1371,73 @@ func (s *Server) getTimelineSummaries(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid date format"})
 	}
 
-	// Get summaries for each hour of the day
-	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-	summaries := make(map[int]fiber.Map)
+	// First, get existing summaries from database
+	existingSummaries, err := s.db.GetHourSummariesForDate(dateStr)
+	if err != nil {
+		s.logger.Error("Failed to get existing hour summaries", "error", err, "date", dateStr)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch existing summaries"})
+	}
 
+	// Convert to map for quick lookup
+	existingSummaryMap := make(map[int]*database.HourSummary)
+	for _, summary := range existingSummaries {
+		existingSummaryMap[summary.Hour] = summary
+	}
+
+	summaries := make(map[int]fiber.Map)
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+
+	// Process each hour
 	for hour := 0; hour < 24; hour++ {
+		// Check if we already have a summary for this hour
+		if existingSummary, exists := existingSummaryMap[hour]; exists {
+			// Use existing summary from database
+			var categories []string
+			if existingSummary.Categories != "" {
+				json.Unmarshal([]byte(existingSummary.Categories), &categories)
+			}
+
+			summaries[hour] = fiber.Map{
+				"hour":         hour,
+				"summary":      existingSummary.Summary,
+				"call_count":   existingSummary.CallCount,
+				"time_range":   fmt.Sprintf("%02d:00-%02d:59", hour, hour),
+				"generated_at": existingSummary.GeneratedAt,
+				"categories":   categories,
+			}
+			continue
+		}
+
+		// No existing summary - check if we should generate one
 		hourStart := startOfDay.Add(time.Duration(hour) * time.Hour)
 		hourEnd := hourStart.Add(time.Hour)
 
 		calls, err := s.db.GetCallRecords(&hourStart, &hourEnd, "", 50, 0)
 		if err != nil || len(calls) == 0 {
-			continue
+			continue // Skip hours with no calls
 		}
 
-		// Generate summary for this hour if we have enough activity
-		if len(calls) >= 3 { // Only generate summaries for hours with significant activity
+		// Only attempt to generate summary if we have enough activity and it's a completed hour
+		if len(calls) >= 3 {
 			summary := s.generateHourSummary(calls, date, hour)
 			if summary != "" {
+				categories := s.categorizeHourActivity(calls)
 				summaries[hour] = fiber.Map{
 					"hour":         hour,
 					"summary":      summary,
 					"call_count":   len(calls),
 					"time_range":   fmt.Sprintf("%02d:00-%02d:59", hour, hour),
 					"generated_at": time.Now(),
-					"categories":   s.categorizeHourActivity(calls),
+					"categories":   categories,
 				}
 			}
 		}
 	}
+
+	s.logger.Debug("Timeline summaries response",
+		"date", dateStr,
+		"existing_count", len(existingSummaries),
+		"returned_count", len(summaries))
 
 	return c.JSON(fiber.Map{
 		"date":         dateStr,
@@ -1372,15 +1484,38 @@ func (s *Server) getHourlySummary(c *fiber.Ctx) error {
 		})
 	}
 
-	summary := s.generateHourSummary(calls, date, hour)
-	categories := s.categorizeHourActivity(calls)
+	// Check for existing summary in database first
+	existingSummary, dbErr := s.db.GetHourSummary(dateStr, hour)
+
+	var summary string
+	var categories []string
+	var generatedAt time.Time
+
+	if dbErr != nil {
+		s.logger.Error("Failed to check existing hour summary", "error", dbErr, "date", dateStr, "hour", hour)
+	}
+
+	if existingSummary != nil {
+		// Use existing summary from database
+		summary = existingSummary.Summary
+		if existingSummary.Categories != "" {
+			json.Unmarshal([]byte(existingSummary.Categories), &categories)
+		}
+		generatedAt = existingSummary.GeneratedAt
+		s.logger.Debug("Using existing hour summary from database", "date", dateStr, "hour", hour)
+	} else {
+		// Generate new summary if none exists
+		summary = s.generateHourSummary(calls, date, hour)
+		categories = s.categorizeHourActivity(calls)
+		generatedAt = time.Now()
+	}
 
 	return c.JSON(fiber.Map{
 		"hour":         hour,
 		"summary":      summary,
 		"call_count":   len(calls),
 		"time_range":   fmt.Sprintf("%02d:00-%02d:59", hour, hour),
-		"generated_at": time.Now(),
+		"generated_at": generatedAt,
 		"categories":   categories,
 		"calls":        s.buildCallSummaries(calls),
 	})
@@ -1439,34 +1574,164 @@ func (s *Server) generateTimelineSummary(c *fiber.Ctx) error {
 	})
 }
 
-// generateHourSummary generates a cached summary for a specific hour
+// generateHourSummary generates or retrieves a permanent summary for a specific hour
 func (s *Server) generateHourSummary(calls []*database.CallRecord, date time.Time, hour int) string {
-	if s.gemini == nil || len(calls) == 0 {
+	if len(calls) == 0 {
 		return ""
 	}
 
-	// Create cache key based on date and hour
-	cacheKey := fmt.Sprintf("hour_summary_%s_%02d", date.Format("2006-01-02"), hour)
-	promptSuffix := fmt.Sprintf("Analyze radio communications for hour %02d:00-%02d:59", hour, hour)
+	dateStr := date.Format("2006-01-02")
+	now := time.Now()
 
-	return s.getCachedAISummary(cacheKey, calls, promptSuffix)
+	// Only generate summaries for completed hours (not current hour unless it's past)
+	isCurrentHour := date.Format("2006-01-02") == now.Format("2006-01-02") && hour == now.Hour()
+	if isCurrentHour {
+		s.logger.Debug("Skipping AI summary generation for current hour", "date", dateStr, "hour", hour)
+		return ""
+	}
+
+	// Check if summary already exists in database
+	existingSummary, err := s.db.GetHourSummary(dateStr, hour)
+	if err != nil {
+		s.logger.Error("Failed to check existing hour summary", "error", err, "date", dateStr, "hour", hour)
+		return ""
+	}
+
+	if existingSummary != nil {
+		s.logger.Debug("Using existing hour summary from database", "date", dateStr, "hour", hour, "id", existingSummary.ID)
+		return existingSummary.Summary
+	}
+
+	// Generate new summary only if we have Gemini and this is a completed hour
+	if s.gemini == nil {
+		s.logger.Debug("Gemini not configured, skipping summary generation", "date", dateStr, "hour", hour)
+		return ""
+	}
+
+	s.logger.Info("Generating new AI summary for completed hour", "date", dateStr, "hour", hour, "call_count", len(calls))
+
+	// Rate limiting check
+	s.aiCallMu.Lock()
+	timeSinceLastCall := time.Since(s.lastAICall)
+	if timeSinceLastCall < 3*time.Second {
+		s.aiCallMu.Unlock()
+		s.logger.Warn("AI API rate limit - too many rapid calls", "date", dateStr, "hour", hour)
+		return ""
+	}
+
+	if s.aiErrorCount > 5 {
+		s.aiCallMu.Unlock()
+		s.logger.Warn("AI API error threshold exceeded", "date", dateStr, "hour", hour, "error_count", s.aiErrorCount)
+		return ""
+	}
+
+	s.lastAICall = time.Now()
+	s.aiRequestCount++
+	s.aiCallMu.Unlock()
+
+	// Generate the summary
+	prompt := s.buildTimelineSummaryPrompt(calls, fmt.Sprintf("Analyze radio communications for hour %02d:00-%02d:59", hour, hour))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	model := s.gemini.GenerativeModel(s.config.Web.Gemini.Model)
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		s.aiCallMu.Lock()
+		s.aiErrorCount++
+		s.aiCallMu.Unlock()
+		s.logger.Error("Failed to generate AI summary", "error", err, "date", dateStr, "hour", hour)
+		return ""
+	}
+
+	// Reset error count on success
+	s.aiCallMu.Lock()
+	s.aiErrorCount = 0
+	s.aiCallMu.Unlock()
+
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		s.logger.Warn("Empty AI summary response", "date", dateStr, "hour", hour)
+		return ""
+	}
+
+	summaryText := fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
+
+	// Store permanently in database
+	categories := s.categorizeHourActivity(calls)
+	categoriesJSON, _ := json.Marshal(categories)
+
+	hourSummary := &database.HourSummary{
+		Date:        dateStr,
+		Hour:        hour,
+		Summary:     summaryText,
+		CallCount:   len(calls),
+		Categories:  string(categoriesJSON),
+		GeneratedAt: time.Now(),
+	}
+
+	if err := s.db.InsertHourSummary(hourSummary); err != nil {
+		s.logger.Error("Failed to store hour summary in database", "error", err, "date", dateStr, "hour", hour)
+		// Return the summary anyway, even if storage failed
+	} else {
+		s.logger.Info("Hour summary stored permanently in database", "date", dateStr, "hour", hour, "id", hourSummary.ID)
+	}
+
+	return summaryText
 }
 
-// generateCustomSummary generates a cached custom summary with specific prompt
+// generateCustomSummary generates a custom summary with specific prompt (no caching for custom summaries)
 func (s *Server) generateCustomSummary(calls []*database.CallRecord, customPrompt string) string {
 	if s.gemini == nil || len(calls) == 0 {
 		return ""
 	}
 
-	// Create cache key based on time range and prompt hash
-	startTime := calls[0].Timestamp
-	endTime := calls[len(calls)-1].Timestamp
-	cacheKey := fmt.Sprintf("custom_summary_%s_%s_%d",
-		startTime.Format("2006-01-02-15"),
-		endTime.Format("2006-01-02-15"),
-		len(customPrompt)) // Simple hash based on prompt length
+	// Rate limiting check
+	s.aiCallMu.Lock()
+	timeSinceLastCall := time.Since(s.lastAICall)
+	if timeSinceLastCall < 3*time.Second {
+		s.aiCallMu.Unlock()
+		s.logger.Warn("AI API rate limit - too many rapid calls for custom summary")
+		return ""
+	}
 
-	return s.getCachedAISummary(cacheKey, calls, customPrompt)
+	if s.aiErrorCount > 5 {
+		s.aiCallMu.Unlock()
+		s.logger.Warn("AI API error threshold exceeded for custom summary", "error_count", s.aiErrorCount)
+		return ""
+	}
+
+	s.lastAICall = time.Now()
+	s.aiRequestCount++
+	s.aiCallMu.Unlock()
+
+	// Generate the summary
+	prompt := s.buildTimelineSummaryPrompt(calls, customPrompt)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	model := s.gemini.GenerativeModel(s.config.Web.Gemini.Model)
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		s.aiCallMu.Lock()
+		s.aiErrorCount++
+		s.aiCallMu.Unlock()
+		s.logger.Error("Failed to generate custom summary", "error", err)
+		return ""
+	}
+
+	// Reset error count on success
+	s.aiCallMu.Lock()
+	s.aiErrorCount = 0
+	s.aiCallMu.Unlock()
+
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		s.logger.Warn("Empty custom summary response")
+		return ""
+	}
+
+	return fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
 }
 
 // categorizeHourActivity categorizes the types of activity in an hour
@@ -1697,7 +1962,6 @@ func (s *Server) cleanUpExpiredCacheEntries() {
 
 	cleanedTimeline := 0
 	cleanedTalkgroup := 0
-	cleanedAISummary := 0
 
 	s.timelineCacheMu.Lock()
 	for key, entry := range s.timelineCache {
@@ -1717,20 +1981,10 @@ func (s *Server) cleanUpExpiredCacheEntries() {
 	}
 	s.talkgroupCacheMu.Unlock()
 
-	s.aiSummaryCacheMu.Lock()
-	for key, entry := range s.aiSummaryCache {
-		if now.After(entry.ExpiresAt) {
-			delete(s.aiSummaryCache, key)
-			cleanedAISummary++
-		}
-	}
-	s.aiSummaryCacheMu.Unlock()
-
-	if cleanedTimeline > 0 || cleanedTalkgroup > 0 || cleanedAISummary > 0 {
+	if cleanedTimeline > 0 || cleanedTalkgroup > 0 {
 		s.logger.Debug("Cache cleanup completed",
 			"timeline_cleaned", cleanedTimeline,
-			"talkgroup_cleaned", cleanedTalkgroup,
-			"ai_summary_cleaned", cleanedAISummary)
+			"talkgroup_cleaned", cleanedTalkgroup)
 	}
 }
 
@@ -1746,102 +2000,5 @@ func (s *Server) InvalidateTimelineCache() {
 	}
 	s.timelineCacheMu.Unlock()
 
-	// Also invalidate AI summaries for today
-	s.aiSummaryCacheMu.Lock()
-	for key := range s.aiSummaryCache {
-		if strings.Contains(key, today) {
-			delete(s.aiSummaryCache, key)
-		}
-	}
-	s.aiSummaryCacheMu.Unlock()
-
-	s.logger.Debug("Timeline and AI summary cache invalidated for today", "date", today)
-}
-
-// getCachedAISummary returns a cached AI summary or generates and caches a new one
-func (s *Server) getCachedAISummary(cacheKey string, calls []*database.CallRecord, promptSuffix string) string {
-	// Check cache first
-	s.aiSummaryCacheMu.RLock()
-	if cached, exists := s.aiSummaryCache[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
-		s.aiSummaryCacheMu.RUnlock()
-		s.logger.Debug("AI summary cache hit", "key", cacheKey, "call_count", cached.CallCount)
-		return cached.Summary
-	}
-	s.aiSummaryCacheMu.RUnlock()
-
-	// Generate new summary if not cached or expired
-	s.logger.Info("Generating new AI summary", "key", cacheKey, "call_count", len(calls))
-
-	if s.gemini == nil || len(calls) == 0 {
-		return ""
-	}
-
-	// Rate limiting check - prevent too many rapid API calls
-	s.aiCallMu.Lock()
-	timeSinceLastCall := time.Since(s.lastAICall)
-	if timeSinceLastCall < 3*time.Second {
-		s.aiCallMu.Unlock()
-		s.logger.Warn("AI API rate limit - too many rapid calls", "key", cacheKey, "time_since_last", timeSinceLastCall)
-		return ""
-	}
-
-	// Check error count - if too many recent errors, back off
-	if s.aiErrorCount > 5 {
-		s.aiCallMu.Unlock()
-		s.logger.Warn("AI API error threshold exceeded - backing off", "key", cacheKey, "error_count", s.aiErrorCount)
-		return ""
-	}
-
-	s.lastAICall = time.Now()
-	s.aiRequestCount++
-	s.aiCallMu.Unlock()
-
-	prompt := s.buildTimelineSummaryPrompt(calls, promptSuffix)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	model := s.gemini.GenerativeModel(s.config.Web.Gemini.Model)
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
-	if err != nil {
-		s.aiCallMu.Lock()
-		s.aiErrorCount++
-		s.aiCallMu.Unlock()
-		s.logger.Error("Failed to generate AI summary", "error", err, "key", cacheKey, "error_count", s.aiErrorCount)
-		return ""
-	}
-
-	// Reset error count on success
-	s.aiCallMu.Lock()
-	s.aiErrorCount = 0
-	s.aiCallMu.Unlock()
-
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		s.logger.Warn("Empty AI summary response", "key", cacheKey)
-		return ""
-	}
-
-	summary := fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
-
-	// Cache the result - longer cache for historical data, shorter for recent data
-	cacheExpiry := 6 * time.Hour // Default 6 hours for historical summaries
-	now := time.Now()
-
-	// If this is for today, use shorter cache time
-	if strings.Contains(cacheKey, now.Format("2006-01-02")) {
-		cacheExpiry = 2 * time.Hour // 2 hours for today's summaries
-	}
-
-	// Cache the summary
-	s.aiSummaryCacheMu.Lock()
-	s.aiSummaryCache[cacheKey] = &AISummaryCacheEntry{
-		Summary:   summary,
-		CachedAt:  time.Now(),
-		ExpiresAt: time.Now().Add(cacheExpiry),
-		CallCount: len(calls),
-	}
-	s.aiSummaryCacheMu.Unlock()
-
-	s.logger.Info("AI summary generated and cached", "key", cacheKey, "cache_expiry_hours", cacheExpiry.Hours())
-	return summary
+	s.logger.Debug("Timeline cache invalidated for today", "date", today)
 }
