@@ -365,7 +365,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - 📖 **Documentation**: Check this README and inline code comments
 - 🐛 **Issues**: Report bugs via GitHub Issues
 - 💬 **Discussions**: Use GitHub Discussions for questions
-- 📧 **Contact**: [your-email@example.com]
 
 ---
 
