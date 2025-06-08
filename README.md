@@ -1,6 +1,6 @@
 # Meiko - Unified SDRTrunk & Transcription System
 
-🎤 **Meiko** is a unified Go application that integrates SDRTrunk and audio transcription services, replacing the need for separate Swimtrunks and SdrTrunk-Transcriber scripts. It provides a local-first, robust, and user-friendly experience for monitoring and transcribing radio communications.
+🎤 **Meiko** is a unified Go application that integrates SDRTrunk and audio transcription services. It provides a local-first, robust, and user-friendly experience for monitoring and transcribing radio communications.
 
 ## Features
 
