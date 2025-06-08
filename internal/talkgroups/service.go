@@ -202,6 +202,24 @@ func (s *Service) LoadPlaylist(filePath string) error {
 
 	s.lastLoaded = time.Now()
 	s.logger.Success("Loaded talkgroup playlist", "count", count, "file", filepath.Base(filePath))
+
+	// Log department breakdown
+	serviceCounts := make(map[ServiceType]int)
+	for _, tg := range s.talkgroups {
+		serviceCounts[tg.ServiceType]++
+	}
+
+	s.logger.Info("Department breakdown",
+		"police", serviceCounts[ServicePolice],
+		"fire", serviceCounts[ServiceFire],
+		"ems", serviceCounts[ServiceEMS],
+		"emergency", serviceCounts[ServiceEmergency],
+		"public_works", serviceCounts[ServicePublicWorks],
+		"education", serviceCounts[ServiceEducation],
+		"events", serviceCounts[ServiceEvents],
+		"airport", serviceCounts[ServiceAirport],
+		"other", serviceCounts[ServiceOther])
+
 	return nil
 }
 

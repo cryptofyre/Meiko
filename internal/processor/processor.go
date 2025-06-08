@@ -144,7 +144,18 @@ func (cp *CallProcessor) processFileEvent(ctx context.Context, event watcher.Fil
 
 	cp.logger.Success("Successfully processed audio file",
 		"file", filepath.Base(event.Path),
+		"talkgroup", callRecord.TalkgroupAlias,
+		"department", callRecord.TalkgroupGroup,
+		"duration", fmt.Sprintf("%ds", callRecord.Duration),
 		"transcription_length", len(result.Text))
+
+	cp.logger.Debug("Parsed filename",
+		"file", filepath.Base(event.Path),
+		"talkgroup_id", callRecord.TalkgroupID,
+		"talkgroup_display", callRecord.TalkgroupAlias,
+		"department", callRecord.TalkgroupGroup,
+		"system", callRecord.TalkgroupGroup,
+		"timestamp", callRecord.Timestamp.Format("2006-01-02 15:04:05"))
 }
 
 // parseFilename extracts metadata from SDRTrunk filename format
@@ -286,13 +297,6 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 			break
 		}
 	}
-
-	cp.logger.Debug("Parsed filename",
-		"file", filename,
-		"talkgroup_id", record.TalkgroupID,
-		"talkgroup_alias", record.TalkgroupAlias,
-		"system", record.TalkgroupGroup,
-		"timestamp", record.Timestamp.Format("2006-01-02 15:04:05"))
 
 	return record
 }

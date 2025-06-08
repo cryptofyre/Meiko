@@ -155,6 +155,7 @@ func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor,
 func (s *Server) setupRoutes() {
 	// Serve static files
 	s.app.Static("/", "./web/static")
+	s.app.Static("/static", "./web/static")
 
 	// API routes
 	api := s.app.Group("/api")

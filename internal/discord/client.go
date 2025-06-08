@@ -192,6 +192,15 @@ func (c *Client) SendCallNotification(call *database.CallRecord) error {
 	}
 
 	c.sendEmbed(embed)
+
+	// Log notification details
+	c.logger.Info("Discord notification sent",
+		"talkgroup", call.TalkgroupID,
+		"department", talkgroupInfo.Group,
+		"service_type", string(deptInfo.Type),
+		"duration", fmt.Sprintf("%.1fs", duration),
+		"has_transcription", call.Transcription != "")
+
 	return nil
 }
 
