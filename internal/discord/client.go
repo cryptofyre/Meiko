@@ -7,6 +7,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"Meiko/internal/config"
+	"Meiko/internal/database"
 	"Meiko/internal/logger"
 )
 
@@ -93,6 +94,73 @@ func (c *Client) SendShutdownNotification() {
 	}
 
 	c.sendEmbed(embed)
+}
+
+// SendCallNotification sends a notification for a new call
+func (c *Client) SendCallNotification(call *database.CallRecord) error {
+	if !c.config.Notifications.Transcriptions {
+		return nil
+	}
+
+	// Create transcription preview
+	transcriptionPreview := "No transcription"
+	if call.Transcription != "" {
+		if len(call.Transcription) > 100 {
+			transcriptionPreview = call.Transcription[:100] + "..."
+		} else {
+			transcriptionPreview = call.Transcription
+		}
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title: "📞 New Call Recorded",
+		Color: 0x3b82f6, // Blue
+		Fields: []*discordgo.MessageEmbedField{
+			{
+				Name:   "Talkgroup",
+				Value:  call.TalkgroupAlias,
+				Inline: true,
+			},
+			{
+				Name:   "System",
+				Value:  call.TalkgroupGroup,
+				Inline: true,
+			},
+			{
+				Name:   "Duration",
+				Value:  fmt.Sprintf("%ds", call.Duration),
+				Inline: true,
+			},
+			{
+				Name:   "Frequency",
+				Value:  call.Frequency,
+				Inline: true,
+			},
+			{
+				Name:   "Time",
+				Value:  call.Timestamp.Format("01/02 15:04:05"),
+				Inline: true,
+			},
+			{
+				Name:   "File",
+				Value:  call.Filename,
+				Inline: false,
+			},
+		},
+		Timestamp: call.Timestamp.Format(time.RFC3339),
+	}
+
+	// Add transcription field if available
+	if call.Transcription != "" {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:   "Transcription",
+			Value:  transcriptionPreview,
+			Inline: false,
+		})
+	}
+
+	c.sendEmbed(embed)
+	return nil
 }
 
 // sendEmbed sends an embed to the configured channel

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -162,6 +163,7 @@ func (s *Server) setupRoutes() {
 	// Call records endpoints
 	api.Get("/calls", s.getCalls)
 	api.Get("/calls/:id", s.getCall)
+	api.Get("/calls/:id/audio", s.getCallAudio)
 	api.Get("/calls/summary/:range", s.getCallsSummary)
 
 	// Statistics endpoints
@@ -406,6 +408,38 @@ func (s *Server) getCall(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(apiCall)
+}
+
+// getCallAudio serves the audio file for a specific call
+func (s *Server) getCallAudio(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{
+			"error": "Invalid call ID",
+		})
+	}
+
+	call, err := s.db.GetCallRecord(id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{
+			"error": "Call record not found",
+		})
+	}
+
+	// Check if audio file exists
+	if _, err := os.Stat(call.Filepath); os.IsNotExist(err) {
+		return c.Status(404).JSON(fiber.Map{
+			"error": "Audio file not found",
+		})
+	}
+
+	// Set proper headers for audio streaming
+	c.Set("Content-Type", "audio/mpeg")
+	c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", call.Filename))
+	c.Set("Accept-Ranges", "bytes")
+
+	// Stream the audio file
+	return c.SendFile(call.Filepath)
 }
 
 // getCallsSummary returns aggregated call statistics

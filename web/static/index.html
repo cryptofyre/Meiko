@@ -768,6 +768,190 @@
                 font-size: 0.9rem;
             }
         }
+
+        /* Timeline Audio Controls */
+        .timeline-audio-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .audio-play-btn, .call-details-btn {
+            padding: 8px 12px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 6px;
+            color: #60a5fa;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .audio-play-btn:hover, .call-details-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .audio-play-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .call-details-btn {
+            background: rgba(139, 92, 246, 0.1);
+            border-color: rgba(139, 92, 246, 0.3);
+            color: #a78bfa;
+        }
+
+        .call-details-btn:hover {
+            background: rgba(139, 92, 246, 0.2);
+            border-color: rgba(139, 92, 246, 0.5);
+        }
+
+        /* Call Details Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 16px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #f1f5f9;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            color: #f1f5f9;
+            background: rgba(148, 163, 184, 0.1);
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .call-detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .call-detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .call-detail-item label {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+
+        .call-detail-item span {
+            color: #e2e8f0;
+            font-family: monospace;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .call-transcription {
+            margin-bottom: 24px;
+        }
+
+        .call-transcription label {
+            display: block;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .transcription-text {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 8px;
+            padding: 16px;
+            color: #e2e8f0;
+            line-height: 1.6;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .call-audio-player label {
+            display: block;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .call-audio-player audio {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 8px;
+        }
+
+        @media (max-width: 768px) {
+            .call-detail-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .modal-content {
+                width: 95%;
+                margin: 20px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1434,33 +1618,200 @@
                 }
             }
             
+            // Add audio controls for call events
+            let audioControlsHTML = '';
+            if (event.type === 'call' && event.data && event.data.call_id) {
+                audioControlsHTML = `
+                    <div class="timeline-audio-controls">
+                        <button class="audio-play-btn" onclick="playCallAudio(${event.data.call_id}, this)" title="Play Audio">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button class="call-details-btn" onclick="showCallDetails(${event.data.call_id})" title="View Details">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                    </div>
+                `;
+            }
+            
             item.innerHTML = `
                 <div class="timeline-icon">
                     <i class="fas fa-${event.icon}"></i>
                 </div>
-                <div class="timeline-header">
-                    <div class="timeline-title">${event.title}</div>
-                    <div class="timeline-time">${timeString}</div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <div class="timeline-title">${event.title}</div>
+                        <div class="timeline-time">${timeString}</div>
+                    </div>
+                    <div class="timeline-description">${event.description}</div>
+                    ${metadataHTML ? `<div class="timeline-metadata">${metadataHTML}</div>` : ''}
+                    ${audioControlsHTML}
                 </div>
-                <div class="timeline-description">${event.description}</div>
-                ${metadataHTML ? `<div class="timeline-metadata">${metadataHTML}</div>` : ''}
             `;
-            
-            // Add click handler for call events
-            if (event.type === 'call' && event.data && event.data.call_id) {
-                item.style.cursor = 'pointer';
-                item.addEventListener('click', () => {
-                    showCallDetails(event.data.call_id);
-                });
-            }
             
             return item;
         }
 
-        // Show call details (could open a modal or navigate to call details)
-        function showCallDetails(callId) {
-            // For now, just show an alert. You could implement a modal or navigate to a detail view
-            alert(`Call ID: ${callId}\nClick to view full call details (feature coming soon)`);
+        // Play call audio
+        function playCallAudio(callId, button) {
+            const audioUrl = `/api/calls/${callId}/audio`;
+            
+            // Stop any currently playing audio
+            const existingAudio = document.querySelector('audio.timeline-audio');
+            if (existingAudio) {
+                existingAudio.pause();
+                existingAudio.remove();
+            }
+            
+            // Reset all play buttons
+            document.querySelectorAll('.audio-play-btn').forEach(btn => {
+                btn.innerHTML = '<i class="fas fa-play"></i>';
+                btn.disabled = false;
+            });
+            
+            // Create and play new audio
+            const audio = document.createElement('audio');
+            audio.className = 'timeline-audio';
+            audio.src = audioUrl;
+            audio.controls = false;
+            
+            // Update button to show loading
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            button.disabled = true;
+            
+            audio.addEventListener('loadstart', () => {
+                button.innerHTML = '<i class="fas fa-pause"></i>';
+                button.disabled = false;
+            });
+            
+            audio.addEventListener('play', () => {
+                button.innerHTML = '<i class="fas fa-pause"></i>';
+            });
+            
+            audio.addEventListener('pause', () => {
+                button.innerHTML = '<i class="fas fa-play"></i>';
+            });
+            
+            audio.addEventListener('ended', () => {
+                button.innerHTML = '<i class="fas fa-play"></i>';
+                audio.remove();
+            });
+            
+            audio.addEventListener('error', () => {
+                button.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                button.disabled = true;
+                setTimeout(() => {
+                    button.innerHTML = '<i class="fas fa-play"></i>';
+                    button.disabled = false;
+                }, 2000);
+            });
+            
+            // Toggle play/pause
+            button.onclick = () => {
+                if (audio.paused) {
+                    audio.play();
+                } else {
+                    audio.pause();
+                }
+            };
+            
+            document.body.appendChild(audio);
+            audio.play();
+        }
+
+        // Show call details in a modal
+        async function showCallDetails(callId) {
+            try {
+                const response = await fetch(`/api/calls/${callId}`);
+                const call = await response.json();
+                
+                if (response.ok) {
+                    showCallModal(call);
+                } else {
+                    alert('Failed to load call details: ' + call.error);
+                }
+            } catch (error) {
+                console.error('Error loading call details:', error);
+                alert('Failed to load call details');
+            }
+        }
+
+        // Show call details in a modal
+        function showCallModal(call) {
+            const timestamp = new Date(call.timestamp).toLocaleString();
+            const duration = call.duration > 0 ? `${call.duration}s` : 'Unknown';
+            
+            const modalHTML = `
+                <div class="modal-overlay" onclick="closeCallModal()">
+                    <div class="modal-content" onclick="event.stopPropagation()">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-phone"></i> Call Details</h3>
+                            <button class="modal-close" onclick="closeCallModal()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="call-detail-grid">
+                                <div class="call-detail-item">
+                                    <label>Talkgroup:</label>
+                                    <span>${call.talkgroup_alias || call.talkgroup_id || 'Unknown'}</span>
+                                </div>
+                                <div class="call-detail-item">
+                                    <label>System:</label>
+                                    <span>${call.talkgroup_group || 'Unknown'}</span>
+                                </div>
+                                <div class="call-detail-item">
+                                    <label>Frequency:</label>
+                                    <span>${call.frequency || 'Unknown'}</span>
+                                </div>
+                                <div class="call-detail-item">
+                                    <label>Duration:</label>
+                                    <span>${duration}</span>
+                                </div>
+                                <div class="call-detail-item">
+                                    <label>Timestamp:</label>
+                                    <span>${timestamp}</span>
+                                </div>
+                                <div class="call-detail-item">
+                                    <label>Filename:</label>
+                                    <span>${call.filename}</span>
+                                </div>
+                            </div>
+                            
+                            ${call.transcription ? `
+                                <div class="call-transcription">
+                                    <label>Transcription:</label>
+                                    <div class="transcription-text">${call.transcription}</div>
+                                </div>
+                            ` : ''}
+                            
+                            <div class="call-audio-player">
+                                <label>Audio:</label>
+                                <audio controls style="width: 100%; margin-top: 8px;">
+                                    <source src="/api/calls/${call.id}/audio" type="audio/mpeg">
+                                    Your browser does not support the audio element.
+                                </audio>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.querySelector('.modal-overlay');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to page
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+        }
+
+        // Close call modal
+        function closeCallModal() {
+            const modal = document.querySelector('.modal-overlay');
+            if (modal) {
+                modal.remove();
+            }
         }
 
         // Handle real-time updates for timeline
