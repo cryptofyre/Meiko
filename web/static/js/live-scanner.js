@@ -119,21 +119,6 @@ function setupAnimationStyles() {
             transition: all 0.3s ease-out;
         }
         
-        .scanner-indicator.powering-up {
-            animation: pulse 0.8s ease-in-out infinite;
-            background: #ff6b35;
-        }
-        
-        .scanner-indicator.frequency-sweep {
-            animation: pulse 0.5s ease-in-out infinite;
-            background: #f7931e;
-        }
-        
-        .scanner-indicator.live {
-            background: #00ff88;
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
-        }
-        
         .frequency-startup {
             animation: pulse 1s ease-in-out infinite;
             color: var(--accent-blue) !important;
@@ -940,7 +925,7 @@ function showAutoplayNotification(callData) {
         position: fixed;
         top: 20px;
         right: 20px;
-        background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+        background: var(--accent-blue);
         color: white;
         padding: 16px 20px;
         border-radius: 8px;
