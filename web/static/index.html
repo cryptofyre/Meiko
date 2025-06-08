@@ -368,5 +368,17 @@
     <script src="/static/js/data-loader.js"></script>
     <script src="/static/js/modals.js"></script>
     <script src="/static/js/live-scanner.js"></script>
+    
+    <script>
+        // Ensure timeline date picker is properly initialized
+        document.addEventListener('DOMContentLoaded', function() {
+            // Additional initialization after all scripts are loaded
+            setTimeout(() => {
+                if (typeof initTimelineDatePicker === 'function') {
+                    initTimelineDatePicker();
+                }
+            }, 200);
+        });
+    </script>
 </body>
 </html> 

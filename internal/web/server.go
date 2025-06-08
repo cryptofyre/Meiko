@@ -266,13 +266,18 @@ func (s *Server) getTimelineForDate(c *fiber.Ctx) error {
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
+	log.Printf("Timeline request for %s (from %s to %s) with limit %d", dateParam, startOfDay.Format("2006-01-02 15:04:05"), endOfDay.Format("2006-01-02 15:04:05"), limit)
+
 	events, err := s.buildTimelineEvents(&startOfDay, &endOfDay, limit)
 	if err != nil {
+		log.Printf("Failed to build timeline events for %s: %v", dateParam, err)
 		return c.Status(500).JSON(fiber.Map{
 			"error":   "Failed to fetch timeline events",
 			"details": err.Error(),
 		})
 	}
+
+	log.Printf("Timeline response for %s: %d events", dateParam, len(events))
 
 	response := TimelineResponse{
 		Events:  events,
@@ -287,10 +292,18 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 	var events []TimelineEvent
 
 	// Get call records for the time period
-	calls, err := s.db.GetCallRecords(start, end, "", limit*2, 0) // Get more calls to mix with other events
+	// Use a higher multiplier to ensure we get enough calls for the full day
+	callLimit := limit * 3
+	if callLimit < 500 {
+		callLimit = 500 // Ensure we get a good amount of data for a full day
+	}
+
+	calls, err := s.db.GetCallRecords(start, end, "", callLimit, 0)
 	if err != nil {
 		return nil, err
 	}
+
+	log.Printf("Retrieved %d calls for timeline between %s and %s", len(calls), start.Format("2006-01-02 15:04:05"), end.Format("2006-01-02 15:04:05"))
 
 	// Convert calls to timeline events
 	for _, call := range calls {

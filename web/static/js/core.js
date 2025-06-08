@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadSystemStats();
     loadTimeline();
     startMeikoPersonality();
+    initTimelineDatePicker(); // Initialize date picker
     setInterval(updateSystemStats, 5000); // Update every 5 seconds
 });
 
@@ -69,6 +70,12 @@ function switchTab(tabName) {
     switch(tabName) {
         case 'timeline':
             loadTimeline();
+            // Ensure date picker is initialized for timeline
+            setTimeout(() => {
+                if (typeof initTimelineDatePicker === 'function') {
+                    initTimelineDatePicker();
+                }
+            }, 100);
             break;
         case 'live-scanner':
             if (!liveScanner.waveformCanvas) {

@@ -16,15 +16,23 @@ function loadTimeline(silent = false) {
         container.innerHTML = '<div class="loading"><img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.7; margin-right: 12px;">Meiko is scanning for events...</div>';
     }
 
+    // Use correct API endpoint format and increase limit
+    const timelineUrl = `/api/timeline/${currentDate}?limit=200`;
+    
     // Load both timeline events and summaries
     Promise.all([
-        fetch(`/api/timeline?date=${currentDate}`).then(r => r.json()),
+        fetch(timelineUrl).then(r => {
+            if (!r.ok) {
+                throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+            }
+            return r.json();
+        }),
         loadTimelineSummaries(currentDate)
     ])
     .then(([timelineData, summariesData]) => {
         timelineSummaries = summariesData.summaries || {};
         displayEnhancedTimeline(timelineData.events);
-        console.log(`Timeline loaded: ${timelineData.events?.length || 0} events, ${Object.keys(timelineSummaries).length} summaries`);
+        console.log(`Timeline loaded: ${timelineData.events?.length || 0} events, ${Object.keys(timelineSummaries).length} summaries for ${currentDate}`);
     })
     .catch(error => {
         console.error('Timeline load error:', error);
@@ -63,7 +71,7 @@ function displayEnhancedTimeline(events) {
             <div class="empty-state">
                 <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.5; margin-bottom: 16px;">
                 <p>Meiko is waiting for activity...</p>
-                <small style="color: var(--text-muted);">No events found for this date</small>
+                <small style="color: var(--text-muted);">No events found for ${currentDate}</small>
             </div>
         `;
         return;
@@ -139,7 +147,7 @@ function organizeTimelineByHour(events) {
         hourlyGroups[hour].events.push(event);
     });
     
-    // Sort by hour
+    // Sort by hour (most recent first - higher hour numbers first)
     return Object.values(hourlyGroups).sort((a, b) => b.hour - a.hour);
 }
 
@@ -194,9 +202,10 @@ function createHourlyTimelineBlock(hourGroup) {
         html += `</div>`;
     }
     
-    // Events for this hour
+    // Events for this hour (sort by time within hour, newest first)
+    const sortedEvents = events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     html += `<div class="timeline-hour-events">`;
-    html += events.map(event => createTimelineItem(event)).join('');
+    html += sortedEvents.map(event => createTimelineItem(event)).join('');
     html += `</div>`;
     
     html += `</div>`;
@@ -313,7 +322,6 @@ function toggleAllSummaries() {
 
 function refreshTimelineSummaries() {
     const container = document.getElementById('timeline-container');
-    const currentHtml = container.innerHTML;
     
     loadTimelineSummaries(currentDate)
         .then(data => {
@@ -366,4 +374,20 @@ function refreshTimeline() {
         currentDate = dateInput.value;
     }
     loadTimeline();
+}
+
+// Add event listener for date picker changes
+function initTimelineDatePicker() {
+    const dateInput = document.getElementById('timeline-date');
+    if (dateInput) {
+        // Set initial date
+        dateInput.value = currentDate;
+        
+        // Add change event listener
+        dateInput.addEventListener('change', function() {
+            currentDate = this.value;
+            console.log('Date changed to:', currentDate);
+            loadTimeline();
+        });
+    }
 } 
