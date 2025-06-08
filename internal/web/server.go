@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,35 @@ type Server struct {
 	lastAutoSummary *AutoSummary
 	summaryMu       sync.RWMutex
 	mu              sync.RWMutex
+
+	// Timeline caching
+	timelineCache    map[string]*TimelineCacheEntry
+	timelineCacheMu  sync.RWMutex
+	talkgroupCache   map[string]*TalkgroupCacheEntry
+	talkgroupCacheMu sync.RWMutex
+}
+
+// TimelineCacheEntry represents a cached timeline response
+type TimelineCacheEntry struct {
+	Events    []TimelineEvent `json:"events"`
+	CachedAt  time.Time       `json:"cached_at"`
+	ExpiresAt time.Time       `json:"expires_at"`
+}
+
+// TalkgroupCacheEntry represents cached talkgroup information
+type TalkgroupCacheEntry struct {
+	Info      *TalkgroupInfo `json:"info"`
+	CachedAt  time.Time      `json:"cached_at"`
+	ExpiresAt time.Time      `json:"expires_at"`
+}
+
+// TalkgroupInfo represents processed talkgroup information
+type TalkgroupInfo struct {
+	ServiceType talkgroups.ServiceType `json:"service_type"`
+	Color       string                 `json:"color"`
+	Icon        string                 `json:"icon"`
+	Title       string                 `json:"title"`
+	Emoji       string                 `json:"emoji"`
 }
 
 // CallRecord represents a call record for API responses
@@ -108,13 +138,15 @@ type TimeRange struct {
 // New creates a new web server instance
 func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor, talkgroups *talkgroups.Service, logger *meikoLogger.Logger) (*Server, error) {
 	server := &Server{
-		config:     cfg,
-		db:         db,
-		monitor:    monitor,
-		talkgroups: talkgroups,
-		logger:     logger,
-		clients:    make(map[*websocket.Conn]bool),
-		broadcast:  make(chan []byte),
+		config:         cfg,
+		db:             db,
+		monitor:        monitor,
+		talkgroups:     talkgroups,
+		logger:         logger,
+		clients:        make(map[*websocket.Conn]bool),
+		broadcast:      make(chan []byte),
+		timelineCache:  make(map[string]*TimelineCacheEntry),
+		talkgroupCache: make(map[string]*TalkgroupCacheEntry),
 	}
 
 	// Initialize Fiber app
@@ -165,6 +197,9 @@ func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor,
 
 	// Start auto-summary generation routine
 	go server.autoSummaryRoutine()
+
+	// Start cache cleanup routine
+	go server.cacheCleanupRoutine()
 
 	return server, nil
 }
@@ -234,6 +269,21 @@ func (s *Server) getTimeline(c *fiber.Ctx) error {
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
+	// Create cache key
+	cacheKey := fmt.Sprintf("timeline_%s_%d", startOfDay.Format("2006-01-02"), limit)
+
+	// Check cache first
+	s.timelineCacheMu.RLock()
+	if cached, exists := s.timelineCache[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
+		s.timelineCacheMu.RUnlock()
+		response := TimelineResponse{
+			Events:  cached.Events,
+			HasMore: len(cached.Events) >= limit,
+		}
+		return c.JSON(response)
+	}
+	s.timelineCacheMu.RUnlock()
+
 	events, err := s.buildTimelineEvents(&startOfDay, &endOfDay, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{
@@ -241,6 +291,20 @@ func (s *Server) getTimeline(c *fiber.Ctx) error {
 			"details": err.Error(),
 		})
 	}
+
+	// Cache the results (5 minute cache for today, 1 hour for past days)
+	cacheExpiry := 5 * time.Minute
+	if startOfDay.Before(time.Now().Truncate(24 * time.Hour)) {
+		cacheExpiry = 1 * time.Hour // Past days can be cached longer
+	}
+
+	s.timelineCacheMu.Lock()
+	s.timelineCache[cacheKey] = &TimelineCacheEntry{
+		Events:    events,
+		CachedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(cacheExpiry),
+	}
+	s.timelineCacheMu.Unlock()
 
 	response := TimelineResponse{
 		Events:  events,
@@ -266,6 +330,22 @@ func (s *Server) getTimelineForDate(c *fiber.Ctx) error {
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
+	// Create cache key
+	cacheKey := fmt.Sprintf("timeline_%s_%d", dateParam, limit)
+
+	// Check cache first
+	s.timelineCacheMu.RLock()
+	if cached, exists := s.timelineCache[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
+		s.timelineCacheMu.RUnlock()
+		s.logger.Debug("Timeline cache hit", "date", dateParam, "events", len(cached.Events))
+		response := TimelineResponse{
+			Events:  cached.Events,
+			HasMore: len(cached.Events) >= limit,
+		}
+		return c.JSON(response)
+	}
+	s.timelineCacheMu.RUnlock()
+
 	log.Printf("Timeline request for %s (from %s to %s) with limit %d", dateParam, startOfDay.Format("2006-01-02 15:04:05"), endOfDay.Format("2006-01-02 15:04:05"), limit)
 
 	events, err := s.buildTimelineEvents(&startOfDay, &endOfDay, limit)
@@ -278,6 +358,25 @@ func (s *Server) getTimelineForDate(c *fiber.Ctx) error {
 	}
 
 	log.Printf("Timeline response for %s: %d events", dateParam, len(events))
+
+	// Cache the results (longer cache for past dates, shorter for today/future)
+	cacheExpiry := 1 * time.Hour // Default 1 hour
+	now := time.Now()
+	if startOfDay.Before(now.Truncate(24 * time.Hour)) {
+		// Past days can be cached longer since they won't change
+		cacheExpiry = 4 * time.Hour
+	} else if startOfDay.Equal(now.Truncate(24 * time.Hour)) {
+		// Today gets shorter cache since it's actively changing
+		cacheExpiry = 5 * time.Minute
+	}
+
+	s.timelineCacheMu.Lock()
+	s.timelineCache[cacheKey] = &TimelineCacheEntry{
+		Events:    events,
+		CachedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(cacheExpiry),
+	}
+	s.timelineCacheMu.Unlock()
 
 	response := TimelineResponse{
 		Events:  events,
@@ -305,87 +404,26 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 
 	log.Printf("Retrieved %d calls for timeline between %s and %s", len(calls), start.Format("2006-01-02 15:04:05"), end.Format("2006-01-02 15:04:05"))
 
-	// Convert calls to timeline events
+	// Convert calls to timeline events using cached talkgroup processing
 	for _, call := range calls {
-		// Use the enhanced talkgroup information that was already processed with context awareness
-		var eventColor string
-		var eventIcon string
-		var eventTitle string
-		var serviceType talkgroups.ServiceType
-
-		if s.talkgroups != nil {
-			// Get current talkgroup info as a fallback
-			deptInfo := s.talkgroups.GetDepartmentInfo(call.TalkgroupID)
-			serviceType = deptInfo.Type
-
-			// If the processor enhanced the TalkgroupGroup (contains emoji), use that classification
-			// to determine the appropriate department info for coloring and icon
-			if call.TalkgroupGroup != "" && call.TalkgroupGroup != "Unknown Department" {
-				// Extract service type from the enhanced group information
-				for st, dept := range s.talkgroups.GetServiceTypes() {
-					if strings.Contains(call.TalkgroupGroup, dept.Emoji) {
-						deptInfo = dept
-						serviceType = st
-						break
-					}
-				}
-				eventTitle = fmt.Sprintf("Call from %s", call.TalkgroupGroup)
-			} else {
-				// Fallback to department classification
-				talkgroupInfo := s.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
-				eventTitle = fmt.Sprintf("Call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
-			}
-
-			// Use department-specific colors and icons
-			eventColor = deptInfo.Color
-
-			// Set icon based on the enhanced service type
-			switch serviceType {
-			case talkgroups.ServicePolice:
-				eventIcon = "shield-alt"
-			case talkgroups.ServiceFire:
-				eventIcon = "fire"
-			case talkgroups.ServiceEMS:
-				eventIcon = "ambulance"
-			case talkgroups.ServiceEmergency:
-				eventIcon = "exclamation-triangle"
-			case talkgroups.ServicePublicWorks:
-				eventIcon = "tools"
-			case talkgroups.ServiceEducation:
-				eventIcon = "graduation-cap"
-			case talkgroups.ServiceAirport:
-				eventIcon = "plane"
-			case talkgroups.ServiceEvents:
-				eventIcon = "broadcast-tower"
-			default:
-				eventIcon = "phone"
-			}
-		} else {
-			// Fallback to basic formatting
-			eventColor = "#3b82f6"
-			eventIcon = "phone"
-			eventTitle = fmt.Sprintf("Call on %s", call.TalkgroupAlias)
-			serviceType = talkgroups.ServiceOther
-		}
+		// Use cached talkgroup information for better performance
+		talkgroupInfo := s.getCachedTalkgroupInfo(call.TalkgroupID, call.TalkgroupGroup)
 
 		event := TimelineEvent{
 			ID:        fmt.Sprintf("call_%d", call.ID),
 			Type:      "call",
 			Timestamp: call.Timestamp,
-			Title:     eventTitle,
-			Icon:      eventIcon,
-			Color:     eventColor,
+			Title:     talkgroupInfo.Title,
+			Icon:      talkgroupInfo.Icon,
+			Color:     talkgroupInfo.Color,
 			Data: map[string]interface{}{
 				"talkgroup":    call.TalkgroupAlias,
 				"frequency":    call.Frequency,
 				"duration":     call.Duration,
 				"call_id":      call.ID,
-				"service_type": "",
+				"service_type": string(talkgroupInfo.ServiceType),
 			},
 		}
-
-		// Add the enhanced service type
-		event.Data["service_type"] = string(serviceType)
 
 		// Create description based on transcription
 		if call.Transcription != "" {
@@ -426,14 +464,10 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 		})
 	}
 
-	// Sort events by timestamp (newest first)
-	for i := 0; i < len(events)-1; i++ {
-		for j := i + 1; j < len(events); j++ {
-			if events[i].Timestamp.Before(events[j].Timestamp) {
-				events[i], events[j] = events[j], events[i]
-			}
-		}
-	}
+	// Sort events by timestamp (newest first) using efficient built-in sort
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].Timestamp.After(events[j].Timestamp)
+	})
 
 	// Limit results
 	if len(events) > limit {
@@ -879,6 +913,9 @@ func (s *Server) sendToClients(data []byte) {
 
 // BroadcastNewCall sends a new call notification to all clients
 func (s *Server) BroadcastNewCall(call *database.CallRecord) {
+	// Invalidate timeline cache to ensure fresh data
+	s.InvalidateTimelineCache()
+
 	s.logger.Info("Broadcasting new call via WebSocket",
 		"call_id", call.ID,
 		"filename", call.Filename,
@@ -1567,4 +1604,129 @@ Instructions:
 	prompt += "- Keep response concise but informative (2-4 sentences)\n"
 
 	return prompt
+}
+
+// getCachedTalkgroupInfo returns cached talkgroup information or processes and caches it
+func (s *Server) getCachedTalkgroupInfo(talkgroupID, talkgroupGroup string) *TalkgroupInfo {
+	cacheKey := fmt.Sprintf("%s_%s", talkgroupID, talkgroupGroup)
+
+	// Check cache first
+	s.talkgroupCacheMu.RLock()
+	if cached, exists := s.talkgroupCache[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
+		s.talkgroupCacheMu.RUnlock()
+		return cached.Info
+	}
+	s.talkgroupCacheMu.RUnlock()
+
+	// Process talkgroup information
+	info := &TalkgroupInfo{
+		ServiceType: talkgroups.ServiceOther,
+		Color:       "#3b82f6",
+		Icon:        "phone",
+		Title:       fmt.Sprintf("Call on %s", talkgroupID),
+	}
+
+	if s.talkgroups != nil {
+		deptInfo := s.talkgroups.GetDepartmentInfo(talkgroupID)
+		info.ServiceType = deptInfo.Type
+		info.Color = deptInfo.Color
+		info.Emoji = deptInfo.Emoji
+
+		// Enhanced processing if TalkgroupGroup contains emoji
+		if talkgroupGroup != "" && talkgroupGroup != "Unknown Department" {
+			for st, dept := range s.talkgroups.GetServiceTypes() {
+				if strings.Contains(talkgroupGroup, dept.Emoji) {
+					deptInfo = dept
+					info.ServiceType = st
+					break
+				}
+			}
+			info.Title = fmt.Sprintf("Call from %s", talkgroupGroup)
+		} else {
+			talkgroupInfo := s.talkgroups.GetTalkgroupInfo(talkgroupID)
+			info.Title = fmt.Sprintf("Call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
+		}
+
+		// Set icon based on service type
+		switch info.ServiceType {
+		case talkgroups.ServicePolice:
+			info.Icon = "shield-alt"
+		case talkgroups.ServiceFire:
+			info.Icon = "fire"
+		case talkgroups.ServiceEMS:
+			info.Icon = "ambulance"
+		case talkgroups.ServiceEmergency:
+			info.Icon = "exclamation-triangle"
+		case talkgroups.ServicePublicWorks:
+			info.Icon = "tools"
+		case talkgroups.ServiceEducation:
+			info.Icon = "graduation-cap"
+		case talkgroups.ServiceAirport:
+			info.Icon = "plane"
+		case talkgroups.ServiceEvents:
+			info.Icon = "broadcast-tower"
+		default:
+			info.Icon = "phone"
+		}
+	}
+
+	// Cache the result (cache for 1 hour since talkgroup info doesn't change often)
+	s.talkgroupCacheMu.Lock()
+	s.talkgroupCache[cacheKey] = &TalkgroupCacheEntry{
+		Info:      info,
+		CachedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	s.talkgroupCacheMu.Unlock()
+
+	return info
+}
+
+// cacheCleanupRoutine cleans up expired cache entries
+func (s *Server) cacheCleanupRoutine() {
+	ticker := time.NewTicker(30 * time.Minute) // Clean up every 30 minutes
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.cleanUpExpiredCacheEntries()
+		}
+	}
+}
+
+// cleanUpExpiredCacheEntries removes expired cache entries
+func (s *Server) cleanUpExpiredCacheEntries() {
+	now := time.Now()
+
+	s.timelineCacheMu.Lock()
+	for key, entry := range s.timelineCache {
+		if now.After(entry.ExpiresAt) {
+			delete(s.timelineCache, key)
+		}
+	}
+	s.timelineCacheMu.Unlock()
+
+	s.talkgroupCacheMu.Lock()
+	for key, entry := range s.talkgroupCache {
+		if now.After(entry.ExpiresAt) {
+			delete(s.talkgroupCache, key)
+		}
+	}
+	s.talkgroupCacheMu.Unlock()
+}
+
+// InvalidateTimelineCache invalidates timeline cache for today to ensure fresh data
+func (s *Server) InvalidateTimelineCache() {
+	today := time.Now().Format("2006-01-02")
+
+	s.timelineCacheMu.Lock()
+	for key := range s.timelineCache {
+		if strings.Contains(key, today) {
+			delete(s.timelineCache, key)
+		}
+	}
+	s.timelineCacheMu.Unlock()
+
+	s.logger.Debug("Timeline cache invalidated for today", "date", today)
 }
