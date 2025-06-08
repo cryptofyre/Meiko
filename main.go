@@ -16,6 +16,7 @@ import (
 	"Meiko/internal/preflight"
 	"Meiko/internal/processor"
 	"Meiko/internal/sdrtrunk"
+	"Meiko/internal/talkgroups"
 	"Meiko/internal/transcription"
 	"Meiko/internal/watcher"
 	"Meiko/internal/web"
@@ -30,6 +31,7 @@ type Application struct {
 	config      *config.Config
 	logger      *logger.Logger
 	db          *database.Database
+	talkgroups  *talkgroups.Service
 	discord     *discord.Client
 	sdrtrunk    *sdrtrunk.Manager
 	watcher     *watcher.FileWatcher
@@ -103,9 +105,12 @@ func (app *Application) initialize() error {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
+	// Initialize talkgroups service
+	app.talkgroups = talkgroups.New(app.config, app.logger)
+
 	// Initialize Discord client
 	if app.config.Discord.Token != "" {
-		app.discord, err = discord.New(app.config.Discord, app.logger)
+		app.discord, err = discord.New(app.config.Discord, app.logger, app.talkgroups)
 		if err != nil {
 			app.logger.Warn("Failed to initialize Discord client", "error", err)
 		}
@@ -127,7 +132,7 @@ func (app *Application) initialize() error {
 	}
 
 	// Initialize call processor
-	app.processor = processor.New(app.db, app.transcriber, app.discord, app.config, app.logger)
+	app.processor = processor.New(app.db, app.transcriber, app.discord, app.config, app.logger, app.talkgroups)
 
 	// Initialize system monitor
 	if app.config.Monitoring.Enabled {
@@ -136,7 +141,7 @@ func (app *Application) initialize() error {
 
 	// Initialize web server
 	if app.config.Web.Enabled {
-		app.webServer, err = web.New(app.config, app.db, app.monitor)
+		app.webServer, err = web.New(app.config, app.db, app.monitor, app.talkgroups)
 		if err != nil {
 			return fmt.Errorf("failed to initialize web server: %w", err)
 		}

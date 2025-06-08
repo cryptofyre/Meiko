@@ -14,6 +14,7 @@ import (
 	"Meiko/internal/database"
 	"Meiko/internal/discord"
 	"Meiko/internal/logger"
+	"Meiko/internal/talkgroups"
 	"Meiko/internal/transcription"
 	"Meiko/internal/watcher"
 )
@@ -25,6 +26,7 @@ type CallProcessor struct {
 	discord     *discord.Client
 	config      *config.Config
 	logger      *logger.Logger
+	talkgroups  *talkgroups.Service
 	webServer   WebServer
 }
 
@@ -34,13 +36,14 @@ type WebServer interface {
 }
 
 // New creates a new call processor
-func New(db *database.Database, transcriber *transcription.Service, discord *discord.Client, config *config.Config, logger *logger.Logger) *CallProcessor {
+func New(db *database.Database, transcriber *transcription.Service, discord *discord.Client, config *config.Config, logger *logger.Logger, talkgroups *talkgroups.Service) *CallProcessor {
 	return &CallProcessor{
 		db:          db,
 		transcriber: transcriber,
 		discord:     discord,
 		config:      config,
 		logger:      logger,
+		talkgroups:  talkgroups,
 	}
 }
 
@@ -210,13 +213,34 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 	talkgroupAlias := ""
 	if fromValue != "" {
 		talkgroupID = fromValue
-		talkgroupAlias = "TG " + fromValue
+		// Use talkgroup service for enhanced formatting
+		if cp.talkgroups != nil {
+			talkgroupInfo := cp.talkgroups.GetTalkgroupInfo(fromValue)
+			talkgroupAlias = cp.talkgroups.FormatTalkgroupDisplay(fromValue)
+			record.TalkgroupGroup = talkgroupInfo.Group
+		} else {
+			talkgroupAlias = "TG " + fromValue
+		}
+
+		// Add TO information if different
 		if toValue != "" && toValue != fromValue {
-			talkgroupAlias += " → TG " + toValue
+			if cp.talkgroups != nil {
+				toDisplay := cp.talkgroups.FormatTalkgroupDisplay(toValue)
+				talkgroupAlias += " → " + toDisplay
+			} else {
+				talkgroupAlias += " → TG " + toValue
+			}
 		}
 	} else if toValue != "" {
 		talkgroupID = toValue
-		talkgroupAlias = "TG " + toValue
+		// Use talkgroup service for enhanced formatting
+		if cp.talkgroups != nil {
+			talkgroupInfo := cp.talkgroups.GetTalkgroupInfo(toValue)
+			talkgroupAlias = cp.talkgroups.FormatTalkgroupDisplay(toValue)
+			record.TalkgroupGroup = talkgroupInfo.Group
+		} else {
+			talkgroupAlias = "TG " + toValue
+		}
 	}
 
 	// If no TO/FROM found, look for T-Control or other patterns
@@ -224,7 +248,13 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 		for _, part := range parts {
 			if strings.HasPrefix(part, "T-") {
 				talkgroupID = part
-				talkgroupAlias = part
+				if cp.talkgroups != nil {
+					// T-Control is typically emergency management
+					talkgroupAlias = "🚨 " + part
+					record.TalkgroupGroup = "Emergency Management"
+				} else {
+					talkgroupAlias = part
+				}
 				break
 			}
 		}
@@ -233,12 +263,19 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 	// Set default if still empty
 	if talkgroupID == "" {
 		talkgroupID = "Unknown"
-		talkgroupAlias = "Unknown Talkgroup"
+		talkgroupAlias = "🔔 Unknown Talkgroup"
+		if record.TalkgroupGroup == "" {
+			record.TalkgroupGroup = "Unknown Department"
+		}
 	}
 
 	record.TalkgroupID = talkgroupID
 	record.TalkgroupAlias = talkgroupAlias
-	record.TalkgroupGroup = systemName
+
+	// Use system name from filename if talkgroup service didn't set it
+	if record.TalkgroupGroup == "" || record.TalkgroupGroup == "Unknown Department" {
+		record.TalkgroupGroup = systemName
+	}
 
 	// Try to extract frequency if present in filename
 	for _, part := range parts {

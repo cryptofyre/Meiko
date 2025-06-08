@@ -21,6 +21,7 @@ import (
 	"Meiko/internal/config"
 	"Meiko/internal/database"
 	"Meiko/internal/monitoring"
+	"Meiko/internal/talkgroups"
 )
 
 // AutoSummary represents an automatically generated summary
@@ -37,6 +38,7 @@ type Server struct {
 	config          *config.Config
 	db              *database.Database
 	monitor         *monitoring.Monitor
+	talkgroups      *talkgroups.Service
 	clients         map[*websocket.Conn]bool
 	broadcast       chan []byte
 	gemini          *genai.Client
@@ -100,13 +102,14 @@ type TimeRange struct {
 }
 
 // New creates a new web server instance
-func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor) (*Server, error) {
+func New(cfg *config.Config, db *database.Database, monitor *monitoring.Monitor, talkgroups *talkgroups.Service) (*Server, error) {
 	server := &Server{
-		config:    cfg,
-		db:        db,
-		monitor:   monitor,
-		clients:   make(map[*websocket.Conn]bool),
-		broadcast: make(chan []byte),
+		config:     cfg,
+		db:         db,
+		monitor:    monitor,
+		talkgroups: talkgroups,
+		clients:    make(map[*websocket.Conn]bool),
+		broadcast:  make(chan []byte),
 	}
 
 	// Initialize Fiber app
@@ -260,19 +263,67 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 
 	// Convert calls to timeline events
 	for _, call := range calls {
+		// Get enhanced talkgroup information
+		var eventColor string
+		var eventIcon string
+		var eventTitle string
+
+		if s.talkgroups != nil {
+			talkgroupInfo := s.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
+			deptInfo := s.talkgroups.GetDepartmentInfo(call.TalkgroupID)
+
+			// Use department-specific colors and icons
+			eventColor = deptInfo.Color
+			eventTitle = fmt.Sprintf("Call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
+
+			// Set icon based on service type
+			switch deptInfo.Type {
+			case talkgroups.ServicePolice:
+				eventIcon = "shield-alt"
+			case talkgroups.ServiceFire:
+				eventIcon = "fire"
+			case talkgroups.ServiceEMS:
+				eventIcon = "ambulance"
+			case talkgroups.ServiceEmergency:
+				eventIcon = "exclamation-triangle"
+			case talkgroups.ServicePublicWorks:
+				eventIcon = "tools"
+			case talkgroups.ServiceEducation:
+				eventIcon = "graduation-cap"
+			case talkgroups.ServiceAirport:
+				eventIcon = "plane"
+			case talkgroups.ServiceEvents:
+				eventIcon = "broadcast-tower"
+			default:
+				eventIcon = "phone"
+			}
+		} else {
+			// Fallback to basic formatting
+			eventColor = "#3b82f6"
+			eventIcon = "phone"
+			eventTitle = fmt.Sprintf("Call on %s", call.TalkgroupAlias)
+		}
+
 		event := TimelineEvent{
 			ID:        fmt.Sprintf("call_%d", call.ID),
 			Type:      "call",
 			Timestamp: call.Timestamp,
-			Title:     fmt.Sprintf("Call on %s", call.TalkgroupAlias),
-			Icon:      "phone",
-			Color:     "#3b82f6",
+			Title:     eventTitle,
+			Icon:      eventIcon,
+			Color:     eventColor,
 			Data: map[string]interface{}{
-				"talkgroup": call.TalkgroupAlias,
-				"frequency": call.Frequency,
-				"duration":  call.Duration,
-				"call_id":   call.ID,
+				"talkgroup":    call.TalkgroupAlias,
+				"frequency":    call.Frequency,
+				"duration":     call.Duration,
+				"call_id":      call.ID,
+				"service_type": "",
 			},
+		}
+
+		// Add service type if available
+		if s.talkgroups != nil {
+			talkgroupInfo := s.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
+			event.Data["service_type"] = string(talkgroupInfo.ServiceType)
 		}
 
 		// Create description based on transcription

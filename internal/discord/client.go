@@ -9,18 +9,20 @@ import (
 	"Meiko/internal/config"
 	"Meiko/internal/database"
 	"Meiko/internal/logger"
+	"Meiko/internal/talkgroups"
 )
 
 // Client handles Discord integration
 type Client struct {
-	config    config.DiscordConfig
-	logger    *logger.Logger
-	session   *discordgo.Session
-	connected bool
+	config     config.DiscordConfig
+	logger     *logger.Logger
+	session    *discordgo.Session
+	talkgroups *talkgroups.Service
+	connected  bool
 }
 
 // New creates a new Discord client
-func New(config config.DiscordConfig, logger *logger.Logger) (*Client, error) {
+func New(config config.DiscordConfig, logger *logger.Logger, talkgroupService *talkgroups.Service) (*Client, error) {
 	if config.Token == "" {
 		return nil, fmt.Errorf("Discord token is required")
 	}
@@ -31,9 +33,10 @@ func New(config config.DiscordConfig, logger *logger.Logger) (*Client, error) {
 	}
 
 	return &Client{
-		config:  config,
-		logger:  logger,
-		session: session,
+		config:     config,
+		logger:     logger,
+		session:    session,
+		talkgroups: talkgroupService,
 	}, nil
 }
 
@@ -102,65 +105,124 @@ func (c *Client) SendCallNotification(call *database.CallRecord) error {
 		return nil
 	}
 
+	// Get enhanced talkgroup information
+	var deptInfo *talkgroups.DepartmentType
+	var talkgroupInfo *talkgroups.TalkgroupInfo
+	var colorHex int
+
+	if c.talkgroups != nil {
+		talkgroupInfo = c.talkgroups.GetTalkgroupInfo(call.TalkgroupID)
+		deptInfo = c.talkgroups.GetDepartmentInfo(call.TalkgroupID)
+
+		// Convert hex color to Discord integer
+		if color, err := parseHexColor(deptInfo.Color); err == nil {
+			colorHex = color
+		}
+	}
+
+	// Fallback to default values if talkgroup service unavailable
+	if deptInfo == nil {
+		deptInfo = &talkgroups.DepartmentType{
+			Color: "#0099ff",
+			Emoji: "🔔",
+			Type:  talkgroups.ServiceOther,
+		}
+		colorHex = 0x0099ff
+	}
+
+	if talkgroupInfo == nil {
+		talkgroupInfo = &talkgroups.TalkgroupInfo{
+			ID:    call.TalkgroupID,
+			Name:  call.TalkgroupAlias,
+			Group: call.TalkgroupGroup,
+		}
+	}
+
 	// Create transcription preview
-	transcriptionPreview := "No transcription"
+	transcriptionPreview := "No transcription available"
 	if call.Transcription != "" {
-		if len(call.Transcription) > 100 {
-			transcriptionPreview = call.Transcription[:100] + "..."
+		if len(call.Transcription) > 300 {
+			transcriptionPreview = call.Transcription[:300] + "..."
 		} else {
 			transcriptionPreview = call.Transcription
 		}
 	}
 
+	// Format duration
+	duration := float64(call.Duration)
+	durationStr := fmt.Sprintf("%.1fs", duration)
+
+	// Create Swimtrunks-style title and subtitle
+	title := fmt.Sprintf("📞 Incoming call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
+	subtitle := fmt.Sprintf("📻 %s", talkgroupInfo.Name)
+
+	// Build the description
+	description := subtitle
+	if call.Transcription != "" {
+		description += "\n\n" + transcriptionPreview
+	}
+
 	embed := &discordgo.MessageEmbed{
-		Title: "📞 New Call Recorded",
-		Color: 0x3b82f6, // Blue
+		Title:       title,
+		Description: description,
+		Color:       colorHex,
 		Fields: []*discordgo.MessageEmbedField{
 			{
-				Name:   "Talkgroup",
-				Value:  call.TalkgroupAlias,
-				Inline: true,
-			},
-			{
-				Name:   "System",
-				Value:  call.TalkgroupGroup,
-				Inline: true,
-			},
-			{
-				Name:   "Duration",
-				Value:  fmt.Sprintf("%ds", call.Duration),
-				Inline: true,
-			},
-			{
-				Name:   "Frequency",
-				Value:  call.Frequency,
-				Inline: true,
-			},
-			{
-				Name:   "Time",
-				Value:  call.Timestamp.Format("01/02 15:04:05"),
-				Inline: true,
-			},
-			{
-				Name:   "File",
-				Value:  call.Filename,
+				Name: "Details",
+				Value: fmt.Sprintf("📟 Unit: `%s` • ⏱️ Duration: `%s` • 🕒 <t:%d:F>",
+					call.TalkgroupID,
+					durationStr,
+					call.Timestamp.Unix()),
 				Inline: false,
 			},
 		},
 		Timestamp: call.Timestamp.Format(time.RFC3339),
+		Footer: &discordgo.MessageEmbedFooter{
+			Text: fmt.Sprintf("TalkGroup: %s • Meiko Scanner", call.TalkgroupID),
+		},
 	}
 
-	// Add transcription field if available
-	if call.Transcription != "" {
+	// Add frequency if available
+	if call.Frequency != "" {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:   "Transcription",
-			Value:  transcriptionPreview,
-			Inline: false,
+			Name:   "Frequency",
+			Value:  call.Frequency,
+			Inline: true,
 		})
 	}
 
 	c.sendEmbed(embed)
 	return nil
+}
+
+// parseHexColor converts a hex color string to Discord color integer
+func parseHexColor(hexColor string) (int, error) {
+	// Remove # if present
+	if len(hexColor) > 0 && hexColor[0] == '#' {
+		hexColor = hexColor[1:]
+	}
+
+	// Parse hex string
+	if len(hexColor) != 6 {
+		return 0x0099ff, fmt.Errorf("invalid hex color format")
+	}
+
+	var color int
+	for _, char := range hexColor {
+		var digit int
+		if char >= '0' && char <= '9' {
+			digit = int(char - '0')
+		} else if char >= 'a' && char <= 'f' {
+			digit = int(char - 'a' + 10)
+		} else if char >= 'A' && char <= 'F' {
+			digit = int(char - 'A' + 10)
+		} else {
+			return 0x0099ff, fmt.Errorf("invalid hex character")
+		}
+		color = color*16 + digit
+	}
+
+	return color, nil
 }
 
 // sendEmbed sends an embed to the configured channel
