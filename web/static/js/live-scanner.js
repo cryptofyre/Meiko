@@ -121,16 +121,16 @@ function setupAnimationStyles() {
         
         .scanner-indicator.powering-up {
             animation: pulse 0.8s ease-in-out infinite;
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            background: #ff6b35;
         }
         
         .scanner-indicator.frequency-sweep {
             animation: pulse 0.5s ease-in-out infinite;
-            background: linear-gradient(135deg, #f7931e, #00d4ff);
+            background: #f7931e;
         }
         
         .scanner-indicator.live {
-            background: linear-gradient(135deg, #00d4ff, #00ff88);
+            background: #00ff88;
             box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
         }
         
@@ -417,7 +417,7 @@ function drawRealWaveform(waveformData) {
     updateTimeIndicator();
 }
 
-// New function to draw real-time audio visualization
+// Enhanced function to draw real-time audio visualization that matches existing style
 function drawAudioVisualization() {
     if (!liveScanner.analyser || !liveScanner.frequencyData || !liveScanner.isPlaying) {
         return;
@@ -426,87 +426,25 @@ function drawAudioVisualization() {
     // Get current frequency data
     liveScanner.analyser.getByteFrequencyData(liveScanner.frequencyData);
     
-    const ctx = liveScanner.waveformContext;
-    const canvas = liveScanner.waveformCanvas;
+    // Convert frequency data to audio-like waveform data (similar to the fake data structure)
+    const dataPoints = 100;
+    const audioData = new Array(dataPoints);
     
-    // Clear canvas with gradient background
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#0a0a0a');
-    gradient.addColorStop(0.5, '#111111');
-    gradient.addColorStop(1, '#0a0a0a');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Calculate bar dimensions
-    const barCount = Math.min(64, liveScanner.frequencyData.length);
-    const barWidth = (canvas.width / barCount) * 0.8;
-    const barSpacing = canvas.width / barCount;
-    const centerY = canvas.height / 2;
-    
-    // Create dynamic gradient based on audio intensity
-    const avgIntensity = liveScanner.frequencyData.reduce((a, b) => a + b, 0) / liveScanner.frequencyData.length;
-    const intensityRatio = avgIntensity / 255;
-    
-    const waveGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    waveGradient.addColorStop(0, `rgba(0, 212, 255, ${0.9 + intensityRatio * 0.1})`);
-    waveGradient.addColorStop(0.3, `rgba(0, 255, 136, ${0.8 + intensityRatio * 0.2})`);
-    waveGradient.addColorStop(0.7, `rgba(0, 255, 136, ${0.6 + intensityRatio * 0.2})`);
-    waveGradient.addColorStop(1, `rgba(0, 212, 255, ${0.5 + intensityRatio * 0.3})`);
-    
-    ctx.fillStyle = waveGradient;
-    
-    // Draw frequency bars with smooth animation
-    for (let i = 0; i < barCount; i++) {
-        const dataIndex = Math.floor((i / barCount) * liveScanner.frequencyData.length);
-        const amplitude = (liveScanner.frequencyData[dataIndex] / 255) * (centerY * 0.8);
-        const x = i * barSpacing + (barSpacing - barWidth) / 2;
+    // Sample and convert frequency data to match the existing waveform style
+    for (let i = 0; i < dataPoints; i++) {
+        const freqIndex = Math.floor((i / dataPoints) * liveScanner.frequencyData.length);
+        const freqValue = liveScanner.frequencyData[freqIndex] / 255; // Normalize to 0-1
         
-        // Add subtle bar-to-bar variation for more organic look
-        const variation = Math.sin(Date.now() * 0.01 + i * 0.5) * 0.1 + 1;
-        const finalAmplitude = amplitude * variation;
+        // Convert to waveform-style data with some smoothing
+        const baseWave = Math.sin(Date.now() * 0.001 + i * 0.1) * 0.1; // Keep the base animation
+        const audioIntensity = freqValue * 0.4; // Scale the real audio data
         
-        // Draw main bar
-        ctx.fillRect(x, centerY - finalAmplitude, barWidth, finalAmplitude * 2);
-        
-        // Add glow effect for high amplitudes
-        if (amplitude > centerY * 0.5) {
-            ctx.shadowColor = '#00ff88';
-            ctx.shadowBlur = 8;
-            ctx.fillRect(x, centerY - finalAmplitude, barWidth, finalAmplitude * 2);
-            ctx.shadowBlur = 0;
-        }
+        // Combine base animation with real audio data
+        audioData[i] = baseWave + audioIntensity * Math.sin(i * 0.2);
     }
     
-    // Add reflection effect
-    ctx.globalAlpha = 0.2;
-    ctx.scale(1, -1);
-    ctx.translate(0, -canvas.height);
-    
-    for (let i = 0; i < barCount; i++) {
-        const dataIndex = Math.floor((i / barCount) * liveScanner.frequencyData.length);
-        const amplitude = (liveScanner.frequencyData[dataIndex] / 255) * (centerY * 0.4);
-        const x = i * barSpacing + (barSpacing - barWidth) / 2;
-        const variation = Math.sin(Date.now() * 0.01 + i * 0.5) * 0.1 + 1;
-        const finalAmplitude = amplitude * variation;
-        
-        ctx.fillRect(x, centerY - finalAmplitude, barWidth, finalAmplitude);
-    }
-    
-    // Reset transformations
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    
-    // Add pulsing center line based on bass frequencies
-    const bassIntensity = liveScanner.frequencyData.slice(0, 8).reduce((a, b) => a + b, 0) / (8 * 255);
-    ctx.strokeStyle = `rgba(0, 255, 136, ${0.3 + bassIntensity * 0.7})`;
-    ctx.lineWidth = 1 + bassIntensity * 2;
-    ctx.beginPath();
-    ctx.moveTo(0, centerY);
-    ctx.lineTo(canvas.width, centerY);
-    ctx.stroke();
-    
-    // Add time indicator
-    updateTimeIndicator();
+    // Use the existing drawLiveWaveform function to maintain visual consistency
+    drawLiveWaveform(audioData);
 }
 
 function updateTimeIndicator() {
