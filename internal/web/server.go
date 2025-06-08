@@ -927,7 +927,7 @@ func (s *Server) generateAutoSummary() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	model := s.gemini.GenerativeModel("gemini-pro")
+	model := s.gemini.GenerativeModel(s.config.Web.Gemini.Model)
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
 		log.Printf("Failed to generate auto summary: %v", err)

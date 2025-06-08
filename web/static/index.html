@@ -1262,23 +1262,44 @@
         }
 
         // Timeline functions
-        function loadTimeline() {
+        let isLoadingTimeline = false;
+        
+        function loadTimeline(silent = false) {
+            // Prevent multiple simultaneous loads
+            if (isLoadingTimeline) {
+                return;
+            }
+            
+            isLoadingTimeline = true;
             const container = document.getElementById('timeline-container');
-            container.innerHTML = '<div class="loading"><img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.7; margin-right: 12px;">Meiko is scanning for events...</div>';
+            
+            if (!silent) {
+                container.innerHTML = '<div class="loading"><img src="/static/Meiko.png" alt="Meiko" style="width: 32px; height: 32px; opacity: 0.7; margin-right: 12px;">Meiko is scanning for events...</div>';
+            }
 
             fetch(`/api/timeline?date=${currentDate}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     displayTimeline(data.events);
+                    console.log(`Timeline loaded: ${data.events?.length || 0} events`);
                 })
                 .catch(error => {
+                    console.error('Timeline load error:', error);
                     container.innerHTML = `
                         <div class="empty-state">
                             <img src="/static/MeikoConfused.png" alt="Confused Meiko" style="width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px;">
                             <p>Meiko encountered an error!</p>
-                            <small style="color: var(--text-muted);">Failed to load timeline events</small>
+                            <small style="color: var(--text-muted);">Failed to load timeline events: ${error.message}</small>
                         </div>
                     `;
+                })
+                .finally(() => {
+                    isLoadingTimeline = false;
                 });
         }
 
@@ -1296,7 +1317,54 @@
                 return;
             }
 
+            // Check if this is an auto-refresh with new data
+            const currentItemCount = container.querySelectorAll('.timeline-item').length;
+            const newItemCount = events.length;
+            
+            // Store current audio state before refresh
+            let wasPlaying = false;
+            let currentCallId = null;
+            let audioCurrentTime = 0;
+            
+            if (currentTimelineAudio && currentTimelineButton) {
+                wasPlaying = !currentTimelineAudio.paused;
+                audioCurrentTime = currentTimelineAudio.currentTime;
+                
+                // Extract call ID from the audio src
+                const srcMatch = currentTimelineAudio.src.match(/\/api\/calls\/(\d+)\/audio/);
+                if (srcMatch) {
+                    currentCallId = parseInt(srcMatch[1]);
+                }
+            }
+            
             container.innerHTML = events.map(event => createTimelineItem(event)).join('');
+            
+            // Restore audio state if it was playing
+            if (wasPlaying && currentCallId) {
+                setTimeout(() => {
+                    const newButton = container.querySelector(`[onclick="playCallAudio(${currentCallId})"]`);
+                    if (newButton && currentTimelineAudio) {
+                        currentTimelineButton = newButton;
+                        currentTimelineAudio.currentTime = audioCurrentTime;
+                        if (currentTimelineAudio.paused) {
+                            currentTimelineAudio.play();
+                        }
+                        newButton.innerHTML = '<i class="fas fa-pause"></i> PAUSE';
+                    }
+                }, 100);
+            }
+            
+            // Flash the timeline briefly to indicate new data if items were added
+            if (newItemCount > currentItemCount && currentItemCount > 0) {
+                container.style.transition = 'background-color 0.3s ease';
+                container.style.backgroundColor = 'rgba(66, 165, 245, 0.1)';
+                setTimeout(() => {
+                    container.style.backgroundColor = '';
+                    setTimeout(() => {
+                        container.style.transition = '';
+                    }, 300);
+                }, 300);
+            }
         }
 
         function createTimelineItem(event) {
@@ -1847,59 +1915,76 @@
 
         function playCallAudio(callId) {
             const button = event.target.closest('.play-btn');
-            const playIcon = button.querySelector('i');
             
-            // If another audio is playing, stop it first
+            // Stop any currently playing audio first
             if (currentTimelineAudio && !currentTimelineAudio.paused) {
                 currentTimelineAudio.pause();
-                if (currentTimelineButton) {
-                    const oldIcon = currentTimelineButton.querySelector('i');
-                    oldIcon.className = 'fas fa-play';
+                currentTimelineAudio.currentTime = 0;
+                
+                // Reset the old button if it exists and is different from current
+                if (currentTimelineButton && currentTimelineButton !== button) {
                     currentTimelineButton.innerHTML = '<i class="fas fa-play"></i> PLAY';
                 }
             }
             
-            // If clicking the same button that's already set up
-            if (currentTimelineAudio && currentTimelineAudio.src.includes(`/api/calls/${callId}/audio`)) {
+            // If clicking the same audio that was already loaded
+            if (currentTimelineAudio && currentTimelineAudio.src.includes(`/api/calls/${callId}/audio`) && currentTimelineButton === button) {
                 if (currentTimelineAudio.paused) {
+                    // Resume playback
                     currentTimelineAudio.play().then(() => {
-                        playIcon.className = 'fas fa-pause';
                         button.innerHTML = '<i class="fas fa-pause"></i> PAUSE';
                     }).catch(error => {
-                        console.error('Failed to play audio:', error);
+                        console.error('Failed to resume audio:', error);
+                        button.innerHTML = '<i class="fas fa-play"></i> PLAY';
                     });
                 } else {
+                    // Pause playback
                     currentTimelineAudio.pause();
-                    playIcon.className = 'fas fa-play';
                     button.innerHTML = '<i class="fas fa-play"></i> PLAY';
                 }
                 return;
             }
             
-            // Create new audio instance
+            // Create new audio instance for different call
+            if (currentTimelineAudio) {
+                currentTimelineAudio.pause();
+                currentTimelineAudio = null;
+            }
+            
             currentTimelineAudio = new Audio(`/api/calls/${callId}/audio`);
             currentTimelineButton = button;
             
             // Set up event listeners
             currentTimelineAudio.addEventListener('ended', () => {
-                playIcon.className = 'fas fa-play';
-                button.innerHTML = '<i class="fas fa-play"></i> PLAY';
+                if (currentTimelineButton) {
+                    currentTimelineButton.innerHTML = '<i class="fas fa-play"></i> PLAY';
+                }
             });
             
             currentTimelineAudio.addEventListener('pause', () => {
-                playIcon.className = 'fas fa-play';
-                button.innerHTML = '<i class="fas fa-play"></i> PLAY';
+                if (currentTimelineButton) {
+                    currentTimelineButton.innerHTML = '<i class="fas fa-play"></i> PLAY';
+                }
             });
             
             currentTimelineAudio.addEventListener('play', () => {
-                playIcon.className = 'fas fa-pause';
-                button.innerHTML = '<i class="fas fa-pause"></i> PAUSE';
+                if (currentTimelineButton) {
+                    currentTimelineButton.innerHTML = '<i class="fas fa-pause"></i> PAUSE';
+                }
             });
             
-            // Play the audio
-            currentTimelineAudio.play().catch(error => {
+            currentTimelineAudio.addEventListener('error', () => {
+                console.error('Audio failed to load');
+                if (currentTimelineButton) {
+                    currentTimelineButton.innerHTML = '<i class="fas fa-play"></i> PLAY';
+                }
+            });
+            
+            // Start playback
+            currentTimelineAudio.play().then(() => {
+                button.innerHTML = '<i class="fas fa-pause"></i> PAUSE';
+            }).catch(error => {
                 console.error('Failed to play audio:', error);
-                playIcon.className = 'fas fa-play';
                 button.innerHTML = '<i class="fas fa-play"></i> PLAY';
             });
         }
@@ -1920,12 +2005,29 @@
                         document.getElementById('meiko-status-subtitle').textContent = "Emergency services active";
                     }, 5000);
 
+                    // Always refresh timeline if it's the current tab
                     if (currentTab === 'timeline') {
-                        loadTimeline();
+                        // Add a small delay to ensure the backend has processed the call
+                        setTimeout(() => {
+                            loadTimeline(true); // Silent refresh to avoid loading indicators
+                        }, 500);
                     }
+                    
+                    // Always refresh calls if it's the current tab
                     if (currentTab === 'calls') {
-                        loadCalls();
+                        setTimeout(() => {
+                            loadCalls();
+                        }, 500);
                     }
+                    
+                    // Update analytics if it's the current tab
+                    if (currentTab === 'analytics') {
+                        setTimeout(() => {
+                            updateStatCards();
+                        }, 1000);
+                    }
+                    
+                    console.log('New call received:', data.data);
                     break;
                 default:
                     console.log('Unknown message type:', data.type);
