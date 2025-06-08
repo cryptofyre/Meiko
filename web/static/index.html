@@ -2356,7 +2356,14 @@
                         }, 1000);
                     }
                     
+                    // Handle live scanner for new calls
+                    handleWebSocketMessageForLiveScanner(data);
+                    
                     console.log('New call received:', data.data);
+                    break;
+                case 'live_scanner_event':
+                    // Handle live scanner specific events
+                    handleWebSocketMessageForLiveScanner(data);
                     break;
                 default:
                     console.log('Unknown message type:', data.type);
@@ -2829,14 +2836,73 @@
             }
         }
 
-        // Update the main WebSocket message handler to include live scanner
-        const originalHandleWebSocketMessage = handleWebSocketMessage;
-        function handleWebSocketMessage(data) {
-            // Call original handler
-            originalHandleWebSocketMessage(data);
+        // Enhanced WebSocket message handling for live scanner
+        function handleWebSocketMessageForLiveScanner(data) {
+            if (data.type === 'new_call' && liveScanner.isActive) {
+                const callData = data.data;
+                const liveScannerData = data.live_scanner;
+                
+                // Add to transcription feed
+                addTranscriptionToFeed(callData);
+                
+                // Update frequency display
+                if (liveScannerData && liveScannerData.frequency_info) {
+                    const freqInfo = liveScannerData.frequency_info;
+                    document.getElementById('active-frequency').textContent = 
+                        `${freqInfo.frequency} • ${freqInfo.description}`;
+                }
+                
+                // Use real waveform data if available
+                if (liveScannerData && liveScannerData.waveform_data) {
+                    drawRealWaveform(liveScannerData.waveform_data);
+                }
+                
+                // Auto-play if this is a new call and auto-play is enabled
+                if (callData.id !== liveScanner.lastCallId && 
+                    liveScannerData && liveScannerData.should_auto_play) {
+                    // Small delay to ensure audio file is ready
+                    setTimeout(() => {
+                        playLiveCall(callData);
+                    }, 500);
+                }
+            }
             
-            // Call live scanner handler
-            handleWebSocketMessageForLiveScanner(data);
+            // Handle live scanner specific events
+            if (data.type === 'live_scanner_event') {
+                switch(data.event) {
+                    case 'frequency_change':
+                        updateFrequencyDisplay(data.data);
+                        break;
+                    case 'signal_strength':
+                        updateSignalStrength(data.data);
+                        break;
+                    case 'scanner_status':
+                        updateScannerStatus(data.data);
+                        break;
+                }
+            }
+        }
+
+        function updateFrequencyDisplay(freqData) {
+            document.getElementById('active-frequency').textContent = 
+                `${freqData.frequency} • ${freqData.description || 'Monitoring'}`;
+        }
+
+        function updateSignalStrength(signalData) {
+            // Could be used to update a signal strength indicator
+            console.log('Signal strength:', signalData);
+        }
+
+        function updateScannerStatus(statusData) {
+            // Update scanner status based on backend events
+            const status = document.getElementById('scanner-status');
+            if (statusData.active) {
+                status.className = 'scanner-indicator live';
+                status.querySelector('span').textContent = 'LIVE';
+            } else {
+                status.className = 'scanner-indicator standby';
+                status.querySelector('span').textContent = 'STANDBY';
+            }
         }
 
         // Close modal when clicking outside
