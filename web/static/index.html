@@ -147,6 +147,27 @@
                         </div>
                     </div>
 
+                    <!-- Call Queue -->
+                    <div class="call-queue-container" id="call-queue-container">
+                        <div class="call-queue-header">
+                            <div class="queue-title">
+                                <i class="fas fa-list"></i>
+                                Call Queue (<span id="queue-count">0</span>)
+                            </div>
+                            <div class="queue-controls">
+                                <button class="btn-small" onclick="skipCurrentCall()" title="Skip current call">
+                                    <i class="fas fa-forward"></i>
+                                </button>
+                                <button class="btn-small" onclick="clearCallQueue()" title="Clear queue">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="call-queue-list" id="queue-list">
+                            <!-- Queue items will be populated here -->
+                        </div>
+                    </div>
+
                     <!-- Live Transcription Feed -->
                     <div class="live-transcription">
                         <div class="transcription-header">

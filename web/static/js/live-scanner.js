@@ -7,7 +7,10 @@ let liveScanner = {
     animationId: null,
     transcriptionItems: [],
     lastCallId: null,
-    volume: 0.75
+    volume: 0.75,
+    callQueue: [],
+    isPlaying: false,
+    currentCall: null
 };
 
 // Initialize Live Scanner
@@ -220,6 +223,11 @@ function stopLiveScanner() {
         liveScanner.currentAudio = null;
     }
     
+    // Clear queue and reset state
+    clearCallQueue();
+    liveScanner.isPlaying = false;
+    liveScanner.currentCall = null;
+    
     // Stop animation
     if (liveScanner.animationId) {
         cancelAnimationFrame(liveScanner.animationId);
@@ -309,11 +317,34 @@ function playLiveCall(callData) {
         return;
     }
     
-    // Stop previous audio
-    if (liveScanner.currentAudio) {
-        console.log('Stopping previous audio');
-        liveScanner.currentAudio.pause();
+    // If already playing, add to queue
+    if (liveScanner.isPlaying && liveScanner.currentAudio && !liveScanner.currentAudio.paused) {
+        console.log('Audio currently playing, adding call to queue:', callData.id);
+        addCallToQueue(callData);
+        return;
     }
+    
+    // Start playing immediately
+    startPlayingCall(callData);
+}
+
+function addCallToQueue(callData) {
+    // Avoid duplicate calls in queue
+    const existingIndex = liveScanner.callQueue.findIndex(call => call.id === callData.id);
+    if (existingIndex === -1) {
+        liveScanner.callQueue.push(callData);
+        console.log('Added call to queue. Queue length:', liveScanner.callQueue.length);
+        updateQueueDisplay();
+    } else {
+        console.log('Call already in queue, skipping:', callData.id);
+    }
+}
+
+function startPlayingCall(callData) {
+    console.log('Starting playback for call:', callData.id);
+    
+    liveScanner.isPlaying = true;
+    liveScanner.currentCall = callData;
     
     // Create new audio instance
     const audioUrl = `/api/calls/${callData.id}/audio`;
@@ -345,6 +376,13 @@ function playLiveCall(callData) {
         console.log('Audio playback ended');
         waveformContainer.classList.remove('playing');
         hideCurrentCallInfo();
+        
+        // Mark as not playing and clear current call
+        liveScanner.isPlaying = false;
+        liveScanner.currentCall = null;
+        
+        // Play next call in queue if available
+        playNextInQueue();
     });
     
     liveScanner.currentAudio.addEventListener('error', (e) => {
@@ -391,11 +429,96 @@ function playLiveCall(callData) {
                 
                 waveformContainer.classList.remove('playing');
                 hideCurrentCallInfo();
+                
+                // Mark as not playing and clear current call
+                liveScanner.isPlaying = false;
+                liveScanner.currentCall = null;
             });
     }
     
     liveScanner.lastCallId = callData.id;
     console.log('Updated lastCallId to:', liveScanner.lastCallId);
+}
+
+function playNextInQueue() {
+    if (liveScanner.callQueue.length > 0) {
+        const nextCall = liveScanner.callQueue.shift();
+        console.log('Playing next call from queue:', nextCall.id, 'Remaining in queue:', liveScanner.callQueue.length);
+        updateQueueDisplay();
+        
+        // Small delay to ensure clean transitions
+        setTimeout(() => {
+            startPlayingCall(nextCall);
+        }, 100);
+    } else {
+        console.log('Queue is empty, no more calls to play');
+        updateQueueDisplay();
+    }
+}
+
+function updateQueueDisplay() {
+    const queueContainer = document.getElementById('call-queue-container');
+    const queueCount = document.getElementById('queue-count');
+    const queueList = document.getElementById('queue-list');
+    
+    if (!queueContainer) return; // Elements might not exist yet
+    
+    if (liveScanner.callQueue.length > 0) {
+        queueContainer.classList.add('active');
+        queueCount.textContent = liveScanner.callQueue.length;
+        
+        // Update queue list
+        queueList.innerHTML = '';
+        liveScanner.callQueue.slice(0, 3).forEach((call, index) => {
+            const item = document.createElement('div');
+            item.className = 'queue-item';
+            
+            const timestamp = new Date(call.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+            
+            item.innerHTML = `
+                <div class="queue-item-meta">
+                    <span class="queue-position">#${index + 1}</span>
+                    <span class="queue-time">${timestamp}</span>
+                </div>
+                <div class="queue-item-title">${call.talkgroup_alias || 'Unknown'}</div>
+                <div class="queue-item-duration">${call.duration}s</div>
+            `;
+            
+            queueList.appendChild(item);
+        });
+        
+        // Add "and more" indicator if queue is longer
+        if (liveScanner.callQueue.length > 3) {
+            const moreItem = document.createElement('div');
+            moreItem.className = 'queue-more';
+            moreItem.textContent = `+${liveScanner.callQueue.length - 3} more`;
+            queueList.appendChild(moreItem);
+        }
+    } else {
+        queueContainer.classList.remove('active');
+    }
+}
+
+function clearCallQueue() {
+    liveScanner.callQueue = [];
+    updateQueueDisplay();
+    console.log('Call queue cleared');
+}
+
+function skipCurrentCall() {
+    if (liveScanner.isPlaying && liveScanner.currentAudio) {
+        console.log('Skipping current call');
+        liveScanner.currentAudio.pause();
+        liveScanner.currentAudio.currentTime = liveScanner.currentAudio.duration || 0;
+        
+        // Trigger ended event to move to next call
+        liveScanner.currentAudio.dispatchEvent(new Event('ended'));
+    }
 }
 
 function showAutoplayNotification(callData) {
@@ -606,7 +729,7 @@ function handleWebSocketMessageForLiveScanner(data) {
         console.log('Live Scanner processing new call:', callData);
         console.log('Live Scanner data:', liveScannerData);
         
-        // Add to transcription feed
+        // Add to transcription feed immediately (regardless of playback)
         addTranscriptionToFeed(callData);
         
         // Update frequency display
