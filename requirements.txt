@@ -1,0 +1,16 @@
+# Meiko FasterWhisper Dependencies
+# Optimized for Raspberry Pi 5
+
+# Core transcription library
+faster-whisper>=1.0.0
+
+# Audio processing dependencies (automatically installed with faster-whisper)
+# torch>=2.0.0  # CPU-only version for Pi 5
+# torchaudio>=2.0.0
+
+# Optional: for better audio format support
+# librosa>=0.10.0  # Uncomment if you need advanced audio preprocessing
+# soundfile>=0.12.0  # Better audio file format support
+
+# System utilities
+pathlib2>=2.3.7; python_version<"3.4"  # Backport for older Python 

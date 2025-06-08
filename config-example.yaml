@@ -1,0 +1,33 @@
+# Example configuration for SDRTrunk Linux Binary Distribution
+# Use this when you have the Linux binary version of SDRTrunk
+
+sdrtrunk:
+  # Path to the SDRTrunk binary executable
+  path: "/home/cryptofyre/SDR/sdrtrunk-linux/bin/sdr-trunk"
+  # Java path is not needed for binary distribution (but can be left as default)
+  java_path: "java"
+  # JVM args are ignored for binary distribution
+  jvm_args: []
+  # SDRTrunk command line arguments (applies to binary)
+  args: []
+  # Working directory
+  working_dir: "/home/cryptofyre/SDR/sdrtrunk-linux"
+  # Audio output directory where SDRTrunk saves recordings
+  audio_output_dir: "/home/cryptofyre/SDR/recordings"
+  # Log level for SDRTrunk output (DEBUG, INFO, WARN, ERROR)
+  log_level: "INFO"
+
+transcription:
+  mode: "local"
+  local:
+    whisper_script: "./fasterWhisper.py"
+    python_path: "./venv/bin/python3"
+    model_size: "tiny"
+    device: "cpu"
+    language: "en"
+
+# Rest of your configuration...
+web:
+  enabled: true
+  port: 8080
+  host: "0.0.0.0" 

@@ -1,0 +1,16 @@
+references/
+recordings/
+sdrtrunk.jar
+meiko
+meiko.db
+meiko.db-shm
+meiko.db-wal
+meiko.db-journal
+meiko.db-lock
+meiko.db-trace
+meiko.db-trace.lock
+meiko.db-trace.lock.lock
+meiko.db-trace.lock.lock.lock
+
+meiko.exe
+config.yaml
