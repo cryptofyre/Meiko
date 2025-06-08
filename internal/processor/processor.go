@@ -237,8 +237,15 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 		// Use talkgroup service for enhanced formatting
 		if cp.talkgroups != nil {
 			talkgroupInfo := cp.talkgroups.GetTalkgroupInfo(fromValue)
+			deptInfo := cp.talkgroups.GetDepartmentInfo(fromValue)
 			talkgroupAlias = cp.talkgroups.FormatTalkgroupDisplay(fromValue)
-			record.TalkgroupGroup = talkgroupInfo.Group
+
+			// Use classified department name instead of raw group
+			if deptInfo.Type != talkgroups.ServiceOther {
+				record.TalkgroupGroup = fmt.Sprintf("%s %s", deptInfo.Emoji, talkgroupInfo.Group)
+			} else {
+				record.TalkgroupGroup = talkgroupInfo.Group
+			}
 		} else {
 			talkgroupAlias = "TG " + fromValue
 		}
@@ -257,8 +264,15 @@ func (cp *CallProcessor) parseFilename(filePath string) *database.CallRecord {
 		// Use talkgroup service for enhanced formatting
 		if cp.talkgroups != nil {
 			talkgroupInfo := cp.talkgroups.GetTalkgroupInfo(toValue)
+			deptInfo := cp.talkgroups.GetDepartmentInfo(toValue)
 			talkgroupAlias = cp.talkgroups.FormatTalkgroupDisplay(toValue)
-			record.TalkgroupGroup = talkgroupInfo.Group
+
+			// Use classified department name instead of raw group
+			if deptInfo.Type != talkgroups.ServiceOther {
+				record.TalkgroupGroup = fmt.Sprintf("%s %s", deptInfo.Emoji, talkgroupInfo.Group)
+			} else {
+				record.TalkgroupGroup = talkgroupInfo.Group
+			}
 		} else {
 			talkgroupAlias = "TG " + toValue
 		}

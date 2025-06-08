@@ -113,22 +113,35 @@ func New(config *config.Config, logger *logger.Logger) *Service {
 func (s *Service) initDepartmentTypes() {
 	s.departmentTypes = map[ServiceType]*DepartmentType{
 		ServicePolice: {
-			Keywords: []string{"PD", "Police", "Sheriff", "SO", "Law", "Enforcement", "MCSO", "Constb", "TSTC Police", "Baylor PD", "Patrol", "Disp", "CID", "SpOp", "Ops", "AllCal"},
-			Color:    "#0037ff",
-			Emoji:    "👮",
-			Type:     ServicePolice,
+			Keywords: []string{
+				"PD", "Police", "Sheriff", "SO", "Law", "Enforcement", "MCSO", "Constb",
+				"TSTC Police", "Baylor PD", "Patrol", "Disp", "CID", "SpOp", "Ops", "AllCal",
+				"Woodway Police", "WPD", "Deputy", "Detective", "K9", "SWAT", "Tactical",
+				"McLennan", "Robinson", "Hewitt", "Lorena", "Bruceville", "Eddy", "Mart",
+				"Moody", "McGregor", "Crawford", "Elm Mott", "Lacy", "Riesel", "Valley Mills",
+			},
+			Color: "#0037ff",
+			Emoji: "👮",
+			Type:  ServicePolice,
 		},
 		ServiceFire: {
-			Keywords: []string{"FD", "Fire", "WFD", "Still Cl", "Tone", " FD ", "Disp FD", "FD Disp", " Fire ", "Fire Dept"},
-			Color:    "#ff0000",
-			Emoji:    "🚒",
-			Type:     ServiceFire,
+			Keywords: []string{
+				"FD", "Fire", "WFD", "Still Cl", "Tone", " FD ", "Disp FD", "FD Disp", " Fire ", "Fire Dept",
+				"Engine", "Ladder", "Truck", "Rescue", "Chief", "Battalion", "Squad", "Hazmat",
+				"Woodway Fire", "McLennan Fire", "Robinson Fire", "Hewitt Fire", "Bellmead Fire",
+			},
+			Color: "#ff0000",
+			Emoji: "🚒",
+			Type:  ServiceFire,
 		},
 		ServiceEMS: {
-			Keywords: []string{"EMS", "Medical", "Ambulance", "Medic", "Rescue"},
-			Color:    "#00aa00",
-			Emoji:    "🚑",
-			Type:     ServiceEMS,
+			Keywords: []string{
+				"EMS", "Medical", "Ambulance", "Medic", "Rescue", "Paramedic", "EMT",
+				"MedStar", "AMR", "MCHD", "Life Flight", "Air Evac", "Mercy", "Emergency Medical",
+			},
+			Color: "#00aa00",
+			Emoji: "🚑",
+			Type:  ServiceEMS,
 		},
 		ServiceEmergency: {
 			Keywords: []string{"Emer", "EOC", "Emergency", "T-Control", "Mgmt"},
@@ -253,10 +266,23 @@ func (s *Service) classifyDepartment(group, name string) ServiceType {
 	for serviceType, dept := range s.departmentTypes {
 		for _, keyword := range dept.Keywords {
 			if strings.Contains(combined, strings.ToUpper(keyword)) {
+				s.logger.Debug("Talkgroup classified",
+					"group", group,
+					"name", name,
+					"combined", combined,
+					"matched_keyword", keyword,
+					"service_type", string(serviceType))
 				return serviceType
 			}
 		}
 	}
+
+	// Log unclassified talkgroups to help with troubleshooting
+	s.logger.Debug("Talkgroup unclassified",
+		"group", group,
+		"name", name,
+		"combined", combined,
+		"defaulting_to", "OTHER")
 
 	return ServiceOther
 }

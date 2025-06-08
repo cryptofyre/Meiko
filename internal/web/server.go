@@ -291,7 +291,14 @@ func (s *Server) buildTimelineEvents(start, end *time.Time, limit int) ([]Timeli
 
 			// Use department-specific colors and icons
 			eventColor = deptInfo.Color
-			eventTitle = fmt.Sprintf("Call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
+
+			// Use the stored TalkgroupGroup which now contains proper department classification
+			if call.TalkgroupGroup != "" && call.TalkgroupGroup != "Unknown Department" {
+				eventTitle = fmt.Sprintf("Call from %s", call.TalkgroupGroup)
+			} else {
+				// Fallback to department classification
+				eventTitle = fmt.Sprintf("Call from %s %s", deptInfo.Emoji, talkgroupInfo.Group)
+			}
 
 			// Set icon based on service type
 			switch deptInfo.Type {
