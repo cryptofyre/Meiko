@@ -822,36 +822,284 @@
             margin-top: 12px;
         }
 
-        .btn-small {
-            padding: 6px 12px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-primary);
-            color: var(--text-secondary);
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-family: var(--font-mono);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        /* Live Scanner Styles */
+        .live-scanner-container {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            height: calc(100vh - 200px);
+            gap: 16px;
+        }
+
+        .live-scanner-header {
+            background: var(--bg-card);
+            border: 1px solid var(--border-secondary);
+            padding: 20px;
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: space-between;
         }
 
-        .btn-small:hover {
-            background: var(--bg-hover);
+        .scanner-status {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .scanner-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: var(--font-mono);
+            font-size: 14px;
+        }
+
+        .scanner-indicator.live {
+            color: var(--accent-red);
+        }
+
+        .scanner-indicator.standby {
+            color: var(--text-secondary);
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .scanner-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .volume-control input[type="range"] {
+            width: 80px;
+        }
+
+        .live-player-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-secondary);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .waveform-container {
+            position: relative;
+            height: 120px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-secondary);
+            overflow: hidden;
+        }
+
+        .waveform-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .playback-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.1) 0%, transparent 2%, transparent 98%, rgba(0, 212, 255, 0.1) 100%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .waveform-container.playing .playback-overlay {
+            opacity: 1;
+        }
+
+        .time-indicator {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 4px 8px;
+            border-radius: 2px;
+        }
+
+        .current-call-info {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-secondary);
+            display: none;
+        }
+
+        .current-call-info.active {
+            display: block;
+            background: linear-gradient(90deg, var(--bg-secondary) 0%, rgba(0, 212, 255, 0.05) 100%);
+        }
+
+        .call-info-grid {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .call-info-details {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .call-info-title {
+            font-size: 16px;
+            font-weight: 600;
             color: var(--text-primary);
-            border-color: var(--accent-blue);
         }
 
-        .btn-small.play-btn {
-            background: var(--accent-blue);
-            color: var(--bg-primary);
-            border-color: var(--accent-blue);
+        .call-info-meta {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
         }
 
-        .btn-small.play-btn:hover {
-            background: var(--accent-green);
+        .call-info-duration {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--accent-blue);
+            font-weight: 500;
+        }
+
+        .live-transcription {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .transcription-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-secondary);
+            background: var(--bg-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .transcription-title {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .transcription-feed {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .transcription-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 12px;
+            position: relative;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .transcription-item.new {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+            animation: slideIn 0.3s ease-out, glow 2s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes glow {
+            0% { box-shadow: 0 0 8px rgba(0, 212, 255, 0.3); }
+            50% { box-shadow: 0 0 16px rgba(0, 212, 255, 0.6); }
+            100% { box-shadow: 0 0 8px rgba(0, 212, 255, 0.3); }
+        }
+
+        .transcription-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+        }
+
+        .transcription-time {
+            color: var(--text-secondary);
+        }
+
+        .transcription-talkgroup {
+            color: var(--accent-blue);
+            font-weight: 500;
+        }
+
+        .transcription-text {
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .empty-transcription {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-transcription i {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Responsive adjustments for live scanner */
+        @media (max-width: 768px) {
+            .live-scanner-container {
+                height: calc(100vh - 150px);
+            }
+
+            .scanner-status {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            .call-info-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+                text-align: center;
+            }
+
+            .waveform-container {
+                height: 80px;
+            }
         }
     </style>
 </head>
@@ -895,6 +1143,10 @@
             <i class="fas fa-stream"></i>
             Timeline
         </button>
+        <button class="nav-tab" onclick="switchTab('live-scanner')">
+            <i class="fas fa-broadcast-tower"></i>
+            Live Scanner
+        </button>
         <button class="nav-tab" onclick="switchTab('calls')">
             <i class="fas fa-phone"></i>
             Call Records
@@ -933,6 +1185,78 @@
                 <div class="card-content">
                     <div id="timeline-container" class="timeline">
                         <div class="loading">Loading timeline events...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Scanner Tab -->
+        <div id="live-scanner" class="tab-content">
+            <div class="live-scanner-container">
+                <!-- Scanner Header -->
+                <div class="live-scanner-header">
+                    <div class="scanner-status">
+                        <div class="scanner-indicator" id="scanner-status">
+                            <div class="pulse-dot"></div>
+                            <span>STANDBY</span>
+                        </div>
+                        <div class="scanner-indicator">
+                            <i class="fas fa-signal"></i>
+                            <span id="active-frequency">Monitoring All Frequencies</span>
+                        </div>
+                    </div>
+                    <div class="scanner-controls">
+                        <div class="volume-control">
+                            <i class="fas fa-volume-up"></i>
+                            <input type="range" id="master-volume" min="0" max="100" value="75">
+                            <span id="volume-display">75%</span>
+                        </div>
+                        <button class="btn" id="scanner-toggle" onclick="toggleLiveScanner()">
+                            <i class="fas fa-play"></i>
+                            START SCANNING
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Player -->
+                <div class="live-player-container">
+                    <!-- Waveform Display -->
+                    <div class="waveform-container" id="waveform-container">
+                        <canvas class="waveform-canvas" id="waveform-canvas"></canvas>
+                        <div class="playback-overlay"></div>
+                        <div class="time-indicator" id="current-time">00:00</div>
+                    </div>
+
+                    <!-- Current Call Info -->
+                    <div class="current-call-info" id="current-call-info">
+                        <div class="call-info-grid">
+                            <div class="call-info-details">
+                                <div class="call-info-title" id="call-info-title">-</div>
+                                <div class="call-info-meta" id="call-info-meta">-</div>
+                            </div>
+                            <div class="call-info-duration" id="call-info-duration">-</div>
+                        </div>
+                    </div>
+
+                    <!-- Live Transcription Feed -->
+                    <div class="live-transcription">
+                        <div class="transcription-header">
+                            <div class="transcription-title">
+                                <i class="fas fa-comment-dots"></i>
+                                Live Transcription Feed
+                            </div>
+                            <button class="btn-small" onclick="clearTranscriptionFeed()">
+                                <i class="fas fa-trash"></i>
+                                CLEAR
+                            </button>
+                        </div>
+                        <div class="transcription-feed" id="transcription-feed">
+                            <div class="empty-transcription">
+                                <i class="fas fa-microphone-slash"></i>
+                                <p>Waiting for communications...</p>
+                                <small>Live transcriptions will appear here as calls come in</small>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1231,6 +1555,11 @@
             switch(tabName) {
                 case 'timeline':
                     loadTimeline();
+                    break;
+                case 'live-scanner':
+                    if (!liveScanner.waveformCanvas) {
+                        initLiveScanner();
+                    }
                     break;
                 case 'calls':
                     loadCalls();
@@ -2038,6 +2367,476 @@
         function updateMeikoStatus(statusText, subtitleText) {
             document.getElementById('meiko-status-text').textContent = statusText;
             document.getElementById('meiko-status-subtitle').textContent = subtitleText;
+        }
+
+        // ===== LIVE SCANNER FUNCTIONALITY =====
+        
+        // Live Scanner state
+        let liveScanner = {
+            isActive: false,
+            currentAudio: null,
+            waveformCanvas: null,
+            waveformContext: null,
+            animationId: null,
+            transcriptionItems: [],
+            lastCallId: null,
+            volume: 0.75
+        };
+
+        // Initialize Live Scanner
+        function initLiveScanner() {
+            liveScanner.waveformCanvas = document.getElementById('waveform-canvas');
+            liveScanner.waveformContext = liveScanner.waveformCanvas.getContext('2d');
+            
+            // Set up canvas sizing
+            resizeWaveformCanvas();
+            window.addEventListener('resize', resizeWaveformCanvas);
+            
+            // Set up volume control
+            const volumeSlider = document.getElementById('master-volume');
+            const volumeDisplay = document.getElementById('volume-display');
+            
+            volumeSlider.addEventListener('input', (e) => {
+                liveScanner.volume = e.target.value / 100;
+                volumeDisplay.textContent = e.target.value + '%';
+                
+                if (liveScanner.currentAudio) {
+                    liveScanner.currentAudio.volume = liveScanner.volume;
+                }
+            });
+            
+            // Initialize waveform
+            drawStandbyWaveform();
+        }
+
+        function resizeWaveformCanvas() {
+            const container = document.getElementById('waveform-container');
+            const canvas = liveScanner.waveformCanvas;
+            
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            
+            if (!liveScanner.isActive) {
+                drawStandbyWaveform();
+            }
+        }
+
+        function drawStandbyWaveform() {
+            const ctx = liveScanner.waveformContext;
+            const canvas = liveScanner.waveformCanvas;
+            
+            ctx.fillStyle = 'var(--bg-tertiary)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw static waveform
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            const centerY = canvas.height / 2;
+            const segments = 200;
+            
+            for (let i = 0; i < segments; i++) {
+                const x = (i / segments) * canvas.width;
+                const amplitude = Math.sin(i * 0.1) * 10 + Math.sin(i * 0.05) * 5;
+                const y = centerY + amplitude;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            
+            ctx.stroke();
+        }
+
+        function drawLiveWaveform(audioData) {
+            const ctx = liveScanner.waveformContext;
+            const canvas = liveScanner.waveformCanvas;
+            
+            // Clear canvas
+            ctx.fillStyle = '#111111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (!audioData) return;
+            
+            // Draw waveform
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            const centerY = canvas.height / 2;
+            const barWidth = canvas.width / audioData.length;
+            
+            for (let i = 0; i < audioData.length; i++) {
+                const amplitude = audioData[i] * centerY;
+                const x = i * barWidth;
+                
+                ctx.moveTo(x, centerY - amplitude);
+                ctx.lineTo(x, centerY + amplitude);
+            }
+            
+            ctx.stroke();
+            
+            // Add time indicator
+            updateTimeIndicator();
+        }
+
+        function drawRealWaveform(waveformData) {
+            const ctx = liveScanner.waveformContext;
+            const canvas = liveScanner.waveformCanvas;
+            
+            // Clear canvas with gradient background
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#0a0a0a');
+            gradient.addColorStop(1, '#111111');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (!waveformData || waveformData.length === 0) return;
+            
+            // Draw waveform bars
+            const barWidth = canvas.width / waveformData.length;
+            const centerY = canvas.height / 2;
+            
+            // Create gradient for waveform
+            const waveGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            waveGradient.addColorStop(0, '#00d4ff');
+            waveGradient.addColorStop(0.5, '#00ff88');
+            waveGradient.addColorStop(1, '#00d4ff');
+            
+            ctx.fillStyle = waveGradient;
+            
+            for (let i = 0; i < waveformData.length; i++) {
+                const amplitude = Math.abs(waveformData[i]) * centerY * 0.8;
+                const x = i * barWidth;
+                
+                // Draw vertical bar
+                ctx.fillRect(x, centerY - amplitude, barWidth - 1, amplitude * 2);
+            }
+            
+            // Add reflection effect
+            ctx.globalAlpha = 0.3;
+            ctx.scale(1, -1);
+            ctx.translate(0, -canvas.height);
+            ctx.fillStyle = waveGradient;
+            
+            for (let i = 0; i < waveformData.length; i++) {
+                const amplitude = Math.abs(waveformData[i]) * centerY * 0.4;
+                const x = i * barWidth;
+                
+                ctx.fillRect(x, centerY - amplitude, barWidth - 1, amplitude);
+            }
+            
+            // Reset transformations
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            
+            // Add time indicator
+            updateTimeIndicator();
+        }
+
+        function updateTimeIndicator() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { 
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('current-time').textContent = timeString;
+        }
+
+        function toggleLiveScanner() {
+            if (liveScanner.isActive) {
+                stopLiveScanner();
+            } else {
+                startLiveScanner();
+            }
+        }
+
+        function startLiveScanner() {
+            liveScanner.isActive = true;
+            
+            // Update UI
+            const button = document.getElementById('scanner-toggle');
+            const status = document.getElementById('scanner-status');
+            
+            button.innerHTML = '<i class="fas fa-stop"></i> STOP SCANNING';
+            button.classList.add('btn-primary');
+            
+            status.className = 'scanner-indicator live';
+            status.querySelector('span').textContent = 'LIVE';
+            
+            // Start waveform animation
+            animateWaveform();
+            
+            // Start scanning simulation
+            startLiveScannerMonitoring();
+            
+            // Update Meiko status
+            updateMeikoStatus("Live scanner activated", "Monitoring all frequencies");
+            
+            console.log('Live scanner started');
+        }
+
+        function stopLiveScanner() {
+            liveScanner.isActive = false;
+            
+            // Stop any playing audio
+            if (liveScanner.currentAudio) {
+                liveScanner.currentAudio.pause();
+                liveScanner.currentAudio = null;
+            }
+            
+            // Stop animation
+            if (liveScanner.animationId) {
+                cancelAnimationFrame(liveScanner.animationId);
+                liveScanner.animationId = null;
+            }
+            
+            // Update UI
+            const button = document.getElementById('scanner-toggle');
+            const status = document.getElementById('scanner-status');
+            const waveformContainer = document.getElementById('waveform-container');
+            const currentCallInfo = document.getElementById('current-call-info');
+            
+            button.innerHTML = '<i class="fas fa-play"></i> START SCANNING';
+            button.classList.remove('btn-primary');
+            
+            status.className = 'scanner-indicator standby';
+            status.querySelector('span').textContent = 'STANDBY';
+            
+            waveformContainer.classList.remove('playing');
+            currentCallInfo.classList.remove('active');
+            
+            // Reset to standby waveform
+            drawStandbyWaveform();
+            
+            // Update Meiko status
+            updateMeikoStatus("Scanner stopped", "Standing by");
+            
+            console.log('Live scanner stopped');
+        }
+
+        function animateWaveform() {
+            if (!liveScanner.isActive) return;
+            
+            // Generate fake waveform data for demonstration
+            const dataPoints = 100;
+            const audioData = new Array(dataPoints);
+            
+            for (let i = 0; i < dataPoints; i++) {
+                // Create more realistic looking audio data
+                const baseWave = Math.sin(Date.now() * 0.001 + i * 0.1) * 0.3;
+                const noise = (Math.random() - 0.5) * 0.1;
+                audioData[i] = baseWave + noise;
+            }
+            
+            drawLiveWaveform(audioData);
+            
+            liveScanner.animationId = requestAnimationFrame(animateWaveform);
+        }
+
+        function startLiveScannerMonitoring() {
+            if (!liveScanner.isActive) return;
+            
+            // Simulate scanning activity
+            setInterval(() => {
+                if (!liveScanner.isActive) return;
+                
+                // Randomly update frequency display to simulate scanning
+                const frequencies = ['453.100', '453.200', '453.300', '460.100', '460.200'];
+                const services = ['Police Dispatch', 'Fire Department', 'EMS Services', 'Public Works', 'Airport Operations'];
+                
+                if (Math.random() > 0.8) { // 20% chance to update
+                    const randomFreq = frequencies[Math.floor(Math.random() * frequencies.length)];
+                    const randomService = services[Math.floor(Math.random() * services.length)];
+                    
+                    document.getElementById('active-frequency').textContent = 
+                        `Scanning ${randomFreq} • ${randomService}`;
+                        
+                    // Briefly flash the frequency display
+                    const freqElement = document.getElementById('active-frequency');
+                    freqElement.style.color = 'var(--accent-blue)';
+                    setTimeout(() => {
+                        freqElement.style.color = '';
+                    }, 500);
+                }
+                
+                // Update time indicator
+                updateTimeIndicator();
+                
+            }, 2000); // Update every 2 seconds
+        }
+
+        function playLiveCall(callData) {
+            if (!liveScanner.isActive) return;
+            
+            // Stop previous audio
+            if (liveScanner.currentAudio) {
+                liveScanner.currentAudio.pause();
+            }
+            
+            // Create new audio instance
+            liveScanner.currentAudio = new Audio(`/api/calls/${callData.id}/audio`);
+            liveScanner.currentAudio.volume = liveScanner.volume;
+            
+            // Update current call info
+            showCurrentCallInfo(callData);
+            
+            // Add visual feedback
+            const waveformContainer = document.getElementById('waveform-container');
+            waveformContainer.classList.add('playing');
+            
+            // Set up audio event listeners
+            liveScanner.currentAudio.addEventListener('ended', () => {
+                waveformContainer.classList.remove('playing');
+                hideCurrentCallInfo();
+            });
+            
+            liveScanner.currentAudio.addEventListener('error', (e) => {
+                console.error('Live audio playback error:', e);
+                waveformContainer.classList.remove('playing');
+                hideCurrentCallInfo();
+            });
+            
+            // Play the audio
+            liveScanner.currentAudio.play().catch(error => {
+                console.error('Failed to play live audio:', error);
+            });
+            
+            liveScanner.lastCallId = callData.id;
+        }
+
+        function showCurrentCallInfo(callData) {
+            const currentCallInfo = document.getElementById('current-call-info');
+            const title = document.getElementById('call-info-title');
+            const meta = document.getElementById('call-info-meta');
+            const duration = document.getElementById('call-info-duration');
+            
+            title.textContent = callData.talkgroup_alias || 'Unknown';
+            meta.textContent = `${callData.frequency} • ${new Date(callData.timestamp).toLocaleTimeString()}`;
+            duration.textContent = `${callData.duration}s`;
+            
+            currentCallInfo.classList.add('active');
+        }
+
+        function hideCurrentCallInfo() {
+            const currentCallInfo = document.getElementById('current-call-info');
+            currentCallInfo.classList.remove('active');
+        }
+
+        function addTranscriptionToFeed(callData) {
+            if (!callData.transcription) return;
+            
+            const feed = document.getElementById('transcription-feed');
+            
+            // Remove empty state if present
+            const emptyState = feed.querySelector('.empty-transcription');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
+            // Create transcription item
+            const item = document.createElement('div');
+            item.className = 'transcription-item new';
+            
+            const timestamp = new Date(callData.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+            
+            item.innerHTML = `
+                <div class="transcription-meta">
+                    <span class="transcription-time">${timestamp}</span>
+                    <span class="transcription-talkgroup">${callData.talkgroup_alias || 'Unknown'}</span>
+                </div>
+                <div class="transcription-text">${callData.transcription}</div>
+            `;
+            
+            // Add to top of feed
+            feed.insertBefore(item, feed.firstChild);
+            
+            // Remove 'new' class after animation
+            setTimeout(() => {
+                item.classList.remove('new');
+            }, 2000);
+            
+            // Keep only last 50 items
+            liveScanner.transcriptionItems.unshift(item);
+            if (liveScanner.transcriptionItems.length > 50) {
+                const oldItem = liveScanner.transcriptionItems.pop();
+                if (oldItem.parentNode) {
+                    oldItem.parentNode.removeChild(oldItem);
+                }
+            }
+            
+            // Auto-scroll to top
+            feed.scrollTop = 0;
+        }
+
+        function clearTranscriptionFeed() {
+            const feed = document.getElementById('transcription-feed');
+            feed.innerHTML = `
+                <div class="empty-transcription">
+                    <i class="fas fa-microphone-slash"></i>
+                    <p>Waiting for communications...</p>
+                    <small>Live transcriptions will appear here as calls come in</small>
+                </div>
+            `;
+            liveScanner.transcriptionItems = [];
+        }
+
+        // Update the main tab switching to handle live scanner
+        function switchTab(tabName) {
+            // Update navigation
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(tabName).classList.add('active');
+
+            currentTab = tabName;
+
+            // Load content for the selected tab
+            switch(tabName) {
+                case 'timeline':
+                    loadTimeline();
+                    break;
+                case 'live-scanner':
+                    if (!liveScanner.waveformCanvas) {
+                        initLiveScanner();
+                    }
+                    break;
+                case 'calls':
+                    loadCalls();
+                    break;
+                case 'analytics':
+                    loadAnalytics();
+                    break;
+                case 'console':
+                    loadConsole();
+                    break;
+            }
+        }
+
+        // Update the main WebSocket message handler to include live scanner
+        const originalHandleWebSocketMessage = handleWebSocketMessage;
+        function handleWebSocketMessage(data) {
+            // Call original handler
+            originalHandleWebSocketMessage(data);
+            
+            // Call live scanner handler
+            handleWebSocketMessageForLiveScanner(data);
         }
 
         // Close modal when clicking outside

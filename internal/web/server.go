@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -196,6 +197,10 @@ func (s *Server) setupRoutes() {
 	// System endpoints
 	api.Get("/system", s.getSystemInfo)
 	api.Get("/logs", s.getLogs)
+
+	// Live streaming endpoints
+	api.Get("/live/stream", s.getLiveStream)
+	api.Get("/live/status", s.getLiveStatus)
 
 	// AI Summary endpoints (requires Gemini)
 	api.Post("/summary/generate", s.generateSummary)
@@ -796,9 +801,36 @@ func (s *Server) BroadcastNewCall(call *database.CallRecord) {
 		CreatedAt:       call.CreatedAt,
 	}
 
-	data, err := json.Marshal(fiber.Map{
+	// Enhanced data for live scanner
+	enhancedData := fiber.Map{
 		"type":      "new_call",
 		"data":      apiCall,
+		"timestamp": time.Now(),
+		"live_scanner": fiber.Map{
+			"should_auto_play": true,
+			"waveform_data":    generateSampleWaveformData(call.Duration),
+			"frequency_info":   s.getFrequencyInfo(call.Frequency),
+		},
+	}
+
+	data, err := json.Marshal(enhancedData)
+	if err != nil {
+		return
+	}
+
+	select {
+	case s.broadcast <- data:
+	default:
+		// Channel is full, skip this broadcast
+	}
+}
+
+// BroadcastLiveScannerEvent sends live scanner specific events
+func (s *Server) BroadcastLiveScannerEvent(eventType string, eventData interface{}) {
+	data, err := json.Marshal(fiber.Map{
+		"type":      "live_scanner_event",
+		"event":     eventType,
+		"data":      eventData,
 		"timestamp": time.Now(),
 	})
 	if err != nil {
@@ -809,6 +841,40 @@ func (s *Server) BroadcastNewCall(call *database.CallRecord) {
 	case s.broadcast <- data:
 	default:
 		// Channel is full, skip this broadcast
+	}
+}
+
+// generateSampleWaveformData creates sample waveform data for visualization
+func generateSampleWaveformData(duration int) []float64 {
+	// Generate realistic-looking waveform data
+	dataPoints := 100
+	waveform := make([]float64, dataPoints)
+
+	for i := 0; i < dataPoints; i++ {
+		// Create varying amplitude based on position
+		progress := float64(i) / float64(dataPoints)
+
+		// Peak in the middle, tapering off at ends
+		envelope := 1.0 - (2.0*progress-1.0)*(2.0*progress-1.0)
+
+		// Add some randomness
+		randomComponent := (rand.Float64() - 0.5) * 0.3
+
+		// Combine components
+		waveform[i] = envelope * (0.7 + randomComponent)
+	}
+
+	return waveform
+}
+
+// getFrequencyInfo returns information about a frequency
+func (s *Server) getFrequencyInfo(frequency string) fiber.Map {
+	// Basic frequency info - could be enhanced with frequency database
+	return fiber.Map{
+		"frequency":       frequency,
+		"description":     "Emergency Services",
+		"is_encrypted":    false,
+		"signal_strength": 85 + int(rand.Float64()*15), // Simulated signal strength
 	}
 }
 
@@ -896,6 +962,109 @@ func (s *Server) autoSummaryRoutine() {
 			s.generateAutoSummary()
 		}
 	}
+}
+
+// getLiveStream provides real-time audio streaming status
+func (s *Server) getLiveStream(c *fiber.Ctx) error {
+	// Get recent calls for live streaming
+	now := time.Now()
+	since := now.Add(-5 * time.Minute) // Last 5 minutes
+
+	calls, err := s.db.GetCallRecords(&since, &now, "", 10, 0)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": "Failed to fetch recent calls",
+		})
+	}
+
+	// Convert to API format
+	recentCalls := make([]CallRecord, len(calls))
+	for i, call := range calls {
+		recentCalls[i] = CallRecord{
+			ID:              call.ID,
+			Filename:        call.Filename,
+			Filepath:        call.Filepath,
+			Timestamp:       call.Timestamp,
+			Duration:        call.Duration,
+			Frequency:       call.Frequency,
+			TalkgroupID:     call.TalkgroupID,
+			TalkgroupAlias:  call.TalkgroupAlias,
+			TalkgroupGroup:  call.TalkgroupGroup,
+			TranscriptionID: call.TranscriptionID,
+			Transcription:   call.Transcription,
+			CreatedAt:       call.CreatedAt,
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"status":             "active",
+		"recent_calls":       recentCalls,
+		"timestamp":          now,
+		"active_frequencies": s.getActiveFrequencies(),
+	})
+}
+
+// getLiveStatus provides current live streaming status
+func (s *Server) getLiveStatus(c *fiber.Ctx) error {
+	stats := s.monitor.GetCurrentStats()
+
+	// Get latest call
+	now := time.Now()
+	since := now.Add(-1 * time.Hour)
+
+	calls, err := s.db.GetCallRecords(&since, &now, "", 1, 0)
+	var lastCall *CallRecord
+	if err == nil && len(calls) > 0 {
+		call := calls[0]
+		lastCall = &CallRecord{
+			ID:              call.ID,
+			Filename:        call.Filename,
+			Filepath:        call.Filepath,
+			Timestamp:       call.Timestamp,
+			Duration:        call.Duration,
+			Frequency:       call.Frequency,
+			TalkgroupID:     call.TalkgroupID,
+			TalkgroupAlias:  call.TalkgroupAlias,
+			TalkgroupGroup:  call.TalkgroupGroup,
+			TranscriptionID: call.TranscriptionID,
+			Transcription:   call.Transcription,
+			CreatedAt:       call.CreatedAt,
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"is_active":         true,
+		"connected_clients": len(s.clients),
+		"system_stats":      stats,
+		"last_call":         lastCall,
+		"timestamp":         now,
+	})
+}
+
+// getActiveFrequencies returns currently active frequencies
+func (s *Server) getActiveFrequencies() []string {
+	// Get frequencies from recent calls (last hour)
+	now := time.Now()
+	since := now.Add(-1 * time.Hour)
+
+	calls, err := s.db.GetCallRecords(&since, &now, "", 100, 0)
+	if err != nil {
+		return []string{}
+	}
+
+	frequencyMap := make(map[string]bool)
+	for _, call := range calls {
+		if call.Frequency != "" {
+			frequencyMap[call.Frequency] = true
+		}
+	}
+
+	frequencies := make([]string, 0, len(frequencyMap))
+	for freq := range frequencyMap {
+		frequencies = append(frequencies, freq)
+	}
+
+	return frequencies
 }
 
 // generateAutoSummary creates a new auto-generated summary
