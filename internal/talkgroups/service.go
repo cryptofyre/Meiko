@@ -84,6 +84,13 @@ type Service struct {
 
 // New creates a new talkgroup service
 func New(config *config.Config, logger *logger.Logger) *Service {
+	if config == nil {
+		panic("config cannot be nil")
+	}
+	if logger == nil {
+		panic("logger cannot be nil")
+	}
+
 	service := &Service{
 		talkgroups: make(map[string]*TalkgroupInfo),
 		config:     config,
@@ -153,11 +160,21 @@ func (s *Service) initDepartmentTypes() {
 			Emoji:    "✈️",
 			Type:     ServiceAirport,
 		},
+		ServiceOther: {
+			Keywords: []string{},
+			Color:    "#0099ff",
+			Emoji:    "🔔",
+			Type:     ServiceOther,
+		},
 	}
 }
 
 // LoadPlaylist loads talkgroup information from an SDRTrunk playlist XML file
 func (s *Service) LoadPlaylist(filePath string) error {
+	if s.departmentTypes == nil {
+		s.initDepartmentTypes()
+	}
+
 	s.logger.Info("Loading talkgroup playlist", "path", filePath)
 
 	data, err := ioutil.ReadFile(filePath)
@@ -183,7 +200,12 @@ func (s *Service) LoadPlaylist(filePath string) error {
 
 		if talkgroupID != "" {
 			serviceType := s.classifyDepartment(alias.Group, alias.Name)
-			deptInfo := s.departmentTypes[serviceType]
+			deptInfo, exists := s.departmentTypes[serviceType]
+			if !exists {
+				// Fallback to ServiceOther if department type not found
+				serviceType = ServiceOther
+				deptInfo = s.departmentTypes[ServiceOther]
+			}
 
 			talkgroupInfo := &TalkgroupInfo{
 				ID:          talkgroupID,
